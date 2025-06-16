@@ -204,3 +204,5 @@ __marimo__/
 *.csv
 *.tsv
 *.json
+data/stock_data
+reports
