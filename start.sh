@@ -13,7 +13,7 @@ echo "台股量化交易系統選單"
 echo "===================="
 echo "1) 執行波段交易分析"
 echo "2) 執行完整回測"
-echo "3) 啟動即時監控"
+echo "3) 產出波段分析報表"
 echo "q) 離開"
 echo ""
 
@@ -28,10 +28,10 @@ case "$choice" in
   2)
     echo "執行完整回測..."
     python main.py --mode backtest
-    ;;
+    ;;ㄔㄛ
   3)
-    echo "啟動即時監控..."
-    python main.py --mode live
+    echo "產出波段分析報表..."
+    python main.py --mode report
     ;;
   q)
     echo "離開"

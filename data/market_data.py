@@ -5,7 +5,9 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
+import importlib.util
 import os
+
 
 class MarketData:
     """
@@ -20,9 +22,18 @@ class MarketData:
         self.provider = provider
         self.data_dir = data_dir or Path(__file__).parent.parent / 'data' / 'stock_data'
         self.data_cache = {}  # 記憶體快取
+        self.storage_format = self._detect_storage_format()
         
         # 建立資料儲存目錄（如果不存在）
         os.makedirs(self.data_dir, exist_ok=True)
+
+    def _detect_storage_format(self):
+        """根據依賴情況決定使用 parquet 或 csv"""
+        parquet_available = (
+            importlib.util.find_spec("pyarrow") is not None or
+            importlib.util.find_spec("fastparquet") is not None
+        )
+        return "parquet" if parquet_available else "csv"
     
     def set_provider(self, provider):
         """
@@ -34,7 +45,32 @@ class MarketData:
         """
         取得本地資料檔案路徑
         """
-        return self.data_dir / f"{symbol}_{interval}.parquet"
+        ext = "parquet" if self.storage_format == "parquet" else "csv"
+        return self.data_dir / f"{symbol}_{interval}.{ext}"
+
+    def _read_local_data(self, path):
+        if self.storage_format == "parquet":
+            return pd.read_parquet(path)
+        return pd.read_csv(path, index_col=0, parse_dates=True)
+
+    def _write_local_data(self, df, path):
+        if self.storage_format == "parquet":
+            df.to_parquet(path)
+        else:
+            df.to_csv(path)
+
+    def _coverage_ok(self, df, start_date, end_date, min_ratio=0.9):
+        if df.empty:
+            return False
+        start = pd.to_datetime(start_date)
+        end = pd.to_datetime(end_date)
+        expected = pd.date_range(start=start, end=end, freq='B')
+        if len(expected) == 0:
+            return True
+        actual = df.index.unique()
+        overlap = actual.intersection(expected)
+        ratio = len(overlap) / len(expected)
+        return ratio >= min_ratio
     
     def load_data(self, symbol, start_date, end_date=None, interval='1d', use_cache=True, force_download=False):
         """
@@ -57,66 +93,27 @@ class MarketData:
             
         # 檢查資料是否在本地檔案
         local_path = self._get_local_data_path(symbol, interval)
+        existing_df = None
         
         if os.path.exists(local_path) and not force_download:
             try:
-                df = pd.read_parquet(local_path)
+                full_df = self._read_local_data(local_path)
                 
                 # 轉換日期索引
-                if not pd.api.types.is_datetime64_ns_dtype(df.index):
-                    df.index = pd.to_datetime(df.index)
+                if not pd.api.types.is_datetime64_ns_dtype(full_df.index):
+                    full_df.index = pd.to_datetime(full_df.index)
                 
                 # 過濾日期範圍
-                df = df.loc[(df.index >= pd.to_datetime(start_date)) & 
-                             (df.index <= pd.to_datetime(end_date))]
+                df = full_df.loc[(full_df.index >= pd.to_datetime(start_date)) & 
+                                 (full_df.index <= pd.to_datetime(end_date))]
                 
                 # 若本地有完整資料，直接返回
-                if not df.empty and df.index.min() <= pd.to_datetime(start_date) and df.index.max() >= pd.to_datetime(end_date):
+                if self._coverage_ok(df, start_date, end_date):
                     # 儲存到快取
                     if use_cache:
                         self.data_cache[cache_key] = df
                     return df
-                
-                # 本地資料不完整，需要更新
-                missing_start = None
-                missing_end = None
-                
-                # 檢查是否需要更早的資料
-                if df.empty or df.index.min() > pd.to_datetime(start_date):
-                    missing_start = start_date
-                    missing_end = df.index.min().strftime('%Y-%m-%d') if not df.empty else end_date
-                
-                # 檢查是否需要更新的資料
-                if df.empty or df.index.max() < pd.to_datetime(end_date):
-                    missing_start = df.index.max().strftime('%Y-%m-%d') if not df.empty else start_date
-                    missing_end = end_date
-                
-                if missing_start and missing_end:
-                    # 下載缺少的資料
-                    new_data = self.provider.get_historical_data(symbol, missing_start, missing_end, interval)
-                    
-                    if not new_data.empty:
-                        # 合併並更新本地資料
-                        if not df.empty:
-                            combined = pd.concat([df, new_data])
-                            combined = combined[~combined.index.duplicated(keep='last')]
-                            combined = combined.sort_index()
-                        else:
-                            combined = new_data
-                        
-                        # 儲存更新的資料
-                        combined.to_parquet(local_path)
-                        
-                        # 過濾需要的日期範圍
-                        result_df = combined.loc[(combined.index >= pd.to_datetime(start_date)) & 
-                                             (combined.index <= pd.to_datetime(end_date))]
-                        
-                        # 儲存到快取
-                        if use_cache:
-                            self.data_cache[cache_key] = result_df
-                        return result_df
-                    
-                return df
+                existing_df = full_df
                     
             except Exception as e:
                 print(f"讀取本地資料時發生錯誤: {str(e)}")
@@ -133,15 +130,14 @@ class MarketData:
             try:
                 # 檢查是否已有本地資料
                 if os.path.exists(local_path) and not force_download:
-                    existing_df = pd.read_parquet(local_path)
-                    
-                    # 合併資料
+                    if existing_df is None:
+                        existing_df = self._read_local_data(local_path)
                     combined = pd.concat([existing_df, df])
                     combined = combined[~combined.index.duplicated(keep='last')]
                     combined = combined.sort_index()
-                    combined.to_parquet(local_path)
+                    self._write_local_data(combined, local_path)
                 else:
-                    df.to_parquet(local_path)
+                    self._write_local_data(df, local_path)
             except Exception as e:
                 print(f"儲存資料到本地時發生錯誤: {str(e)}")
             

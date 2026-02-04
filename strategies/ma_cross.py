@@ -1,4 +1,5 @@
 import pandas as pd
+from utils.signals import add_signal_from_position
 from .strategy_interface import StrategyInterface
 
 class MACrossStrategy(StrategyInterface):
@@ -13,11 +14,13 @@ class MACrossStrategy(StrategyInterface):
         df = df.copy()
         df['short_ma'] = df['Close'].rolling(self.short_window).mean()
         df['long_ma'] = df['Close'].rolling(self.long_window).mean()
-        df['signal'] = 0
-        df.loc[df.index[self.short_window:], 'signal'] = (
-            (df['short_ma'][self.short_window:] > df['long_ma'][self.short_window:]).astype(int)
-        )
-        df['position'] = df['signal'].diff()
+        df['position'] = 0
+        start_idx = max(self.short_window, self.long_window)
+        if start_idx < len(df):
+            df.loc[df.index[start_idx:], 'position'] = (
+                (df['short_ma'][start_idx:] > df['long_ma'][start_idx:]).astype(int)
+            )
+        df = add_signal_from_position(df)
         return df
 
     def get_parameters(self) -> dict:

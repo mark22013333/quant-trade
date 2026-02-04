@@ -3,6 +3,7 @@
 """
 import pandas as pd
 import numpy as np
+from utils.signals import add_signal_from_position
 from ..base_strategy import BaseStrategy
 
 class SimplifiedSwingStrategy(BaseStrategy):
@@ -116,6 +117,7 @@ class SimplifiedSwingStrategy(BaseStrategy):
             if position == 1 and pd.isna(df.loc[df.index[i], 'entry_price']):
                 df.loc[df.index[i], 'entry_price'] = df['entry_price'].iloc[i-1]
             
+        df = add_signal_from_position(df)
         return df
 
     def analyze_stock_suitability(self, data, threshold=0.05):

@@ -3,6 +3,7 @@
 """
 import pandas as pd
 import numpy as np
+from utils.signals import add_signal_from_position
 from ..base_strategy import BaseStrategy
 
 class SwingTradingStrategy(BaseStrategy):
@@ -182,6 +183,7 @@ class SwingTradingStrategy(BaseStrategy):
             if position == 1 and pd.isna(df.loc[df.index[i], 'entry_price']):
                 df.loc[df.index[i], 'entry_price'] = entry_price
             
+        df = add_signal_from_position(df)
         return df
     
     def analyze_stock_suitability(self, data, threshold=0.05):

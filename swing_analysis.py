@@ -125,7 +125,7 @@ def analyze_industry_groups(start_date, end_date, params=None):
     
     return industry_results
 
-def analyze_industry_groups_simple(start_date, end_date):
+def analyze_industry_groups_simple(start_date, end_date, params=None):
     """
     使用簡化版網頁報表分析器分析各產業群組的股票適合度
     專門解決維度不匹配問題
@@ -138,7 +138,7 @@ def analyze_industry_groups_simple(start_date, end_date):
     analyzer = SimpleWebReportAnalyzer()
     
     # 使用分析器分析所有產業
-    return analyzer.analyze_industry_groups(ALL_CATEGORY_STOCKS, start_date, end_date)
+    return analyzer.analyze_industry_groups(ALL_CATEGORY_STOCKS, start_date, end_date, params=params)
 
 def visualize_results(industry_results, output_dir="./results"):
     """
@@ -240,7 +240,7 @@ def main():
     }
     
     # 使用簡化版網頁報表分析器進行分析，避免維度不匹配問題
-    industry_results = analyze_industry_groups_simple(start_date, end_date)
+    industry_results = analyze_industry_groups_simple(start_date, end_date, strategy_params)
     
     # 使用網頁報表呈現分析結果 (取代舊版視窗介面視覺化)
     output_dir = "./reports"

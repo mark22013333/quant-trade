@@ -30,3 +30,9 @@ class BrokerInterface(ABC):
         :param symbol: 股票代號
         """
         pass
+
+    def get_trade_log(self):
+        """
+        取得交易紀錄（回測/模擬券商可提供）
+        """
+        return []

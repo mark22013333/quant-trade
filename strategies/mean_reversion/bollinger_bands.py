@@ -3,6 +3,7 @@
 """
 import pandas as pd
 import numpy as np
+from utils.signals import add_signal_from_position
 from ..base_strategy import BaseStrategy
 
 class BollingerBandsStrategy(BaseStrategy):
@@ -79,4 +80,5 @@ class BollingerBandsStrategy(BaseStrategy):
                     
             df.loc[df.index[i], 'position'] = position
         
+        df = add_signal_from_position(df)
         return df

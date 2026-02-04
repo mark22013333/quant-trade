@@ -54,7 +54,7 @@ class WebReportAnalyzer:
                 
                 # 自行執行策略分析，避免維度不匹配問題
                 # 計算技術指標
-                df = data.copy()
+                df = data.copy().sort_index()
                 
                 # 計算 RSI
                 delta = df['Close'].diff()
@@ -107,7 +107,9 @@ class WebReportAnalyzer:
                     macd_score = macd_score.mean()
                 
                 # 價格相對於布林帶的位置
-                bb_position = (df['Close'] - df['LowerBand']) / (df['UpperBand'] - df['LowerBand'])
+                bb_den = (df['UpperBand'] - df['LowerBand']).replace(0, np.nan)
+                bb_position = (df['Close'] - df['LowerBand']) / bb_den
+                bb_position = bb_position.fillna(0.5)
                 bb_swing = bb_position.rolling(window=20).std()
                 bb_score = bb_swing.mean() * 5  # 標準化
                 if isinstance(bb_score, pd.Series):
@@ -118,23 +120,23 @@ class WebReportAnalyzer:
                 win_count = 0
                 trades = 0
                 
-                for i in range(50, len(df) - 15):
+                i = 50
+                while i < len(df) - 15:
                     # 進場條件 (RSI 超賣 + MACD 即將交叉向上)
                     if df['RSI'].iloc[i] < 30 and df['MACD'].iloc[i] > df['MACD'].iloc[i-1]:
                         entry_price = df['Close'].iloc[i+1]  # 下一個收盤價進場
-                        exit_price = 0
+                        exit_idx = None
                         
                         # 尋找出場點 (RSI > 70 或者經過15個交易日)
                         for j in range(i+2, min(i+16, len(df))):
                             if df['RSI'].iloc[j] > 70:
-                                exit_price = df['Close'].iloc[j]
+                                exit_idx = j
                                 break
                         
-                        if exit_price == 0:  # 如果沒有觸發RSI出場，使用第15天的收盤價
-                            try:
-                                exit_price = df['Close'].iloc[i+15]
-                            except IndexError:
-                                exit_price = df['Close'].iloc[-1]
+                        if exit_idx is None:
+                            exit_idx = min(i + 15, len(df) - 1)
+                            
+                        exit_price = df['Close'].iloc[exit_idx]
                                 
                         # 計算這次交易的回報率
                         trade_return = (exit_price / entry_price) - 1
@@ -144,9 +146,9 @@ class WebReportAnalyzer:
                             win_count += 1
                             
                         trades += 1
-                        
-                        # 跳過這次交易所涵蓋的區間
-                        i = j
+                        i = exit_idx + 1
+                        continue
+                    i += 1
                 
                 # 整合所有評分要素
                 if trades > 0:

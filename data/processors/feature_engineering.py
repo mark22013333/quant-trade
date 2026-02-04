@@ -3,7 +3,13 @@
 """
 import pandas as pd
 import numpy as np
-from talib import abstract
+
+try:
+    from talib import abstract
+    HAS_TALIB = True
+except Exception:
+    abstract = None
+    HAS_TALIB = False
 
 class FeatureEngineering:
     """
@@ -69,6 +75,39 @@ class FeatureEngineering:
         :param df: 包含 OHLCV 資料的 DataFrame
         """
         df_copy = df.copy()
+        if not HAS_TALIB:
+            # RSI
+            for period in [6, 14]:
+                delta = df_copy['Close'].diff()
+                gain = delta.where(delta > 0, 0).rolling(window=period).mean()
+                loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
+                rs = gain / loss.replace(0, np.nan)
+                rsi = 100 - (100 / (1 + rs))
+                df_copy[f'RSI_{period}'] = rsi
+                df_copy[f'RSI_{period}_Change'] = rsi.diff()
+
+            # MACD
+            fast_ema = df_copy['Close'].ewm(span=12, adjust=False).mean()
+            slow_ema = df_copy['Close'].ewm(span=26, adjust=False).mean()
+            df_copy['MACD'] = fast_ema - slow_ema
+            df_copy['MACD_Signal'] = df_copy['MACD'].ewm(span=9, adjust=False).mean()
+            df_copy['MACD_Hist'] = df_copy['MACD'] - df_copy['MACD_Signal']
+
+            # Stochastic
+            low_n = df_copy['Low'].rolling(window=14).min()
+            high_n = df_copy['High'].rolling(window=14).max()
+            stoch_k = (df_copy['Close'] - low_n) / (high_n - low_n) * 100
+            df_copy['STOCH_K'] = stoch_k
+            df_copy['STOCH_D'] = stoch_k.rolling(window=3).mean()
+
+            # Williams %R
+            df_copy['WILLR_14'] = (high_n - df_copy['Close']) / (high_n - low_n) * -100
+
+            # Momentum / ROC
+            df_copy['MOM_10'] = df_copy['Close'].diff(10)
+            df_copy['ROC_10'] = df_copy['Close'].pct_change(10) * 100
+
+            return df_copy
         
         # 標準化的名稱
         ohlc_dict = {
@@ -139,6 +178,35 @@ class FeatureEngineering:
         :param df: 包含 OHLCV 資料的 DataFrame
         """
         df_copy = df.copy()
+        if not HAS_TALIB:
+            # 布林通道
+            for period in [10, 20]:
+                mid = df_copy['Close'].rolling(window=period).mean()
+                std = df_copy['Close'].rolling(window=period).std()
+                upper = mid + std * 2
+                lower = mid - std * 2
+                df_copy[f'BB_Upper_{period}'] = upper
+                df_copy[f'BB_Middle_{period}'] = mid
+                df_copy[f'BB_Lower_{period}'] = lower
+                df_copy[f'BB_Width_{period}'] = (upper - lower) / mid * 100
+                df_copy[f'BB_Position_{period}'] = (df_copy['Close'] - mid) / (upper - mid) * 2 - 1
+
+            # ATR
+            high_low = df_copy['High'] - df_copy['Low']
+            high_close = (df_copy['High'] - df_copy['Close'].shift()).abs()
+            low_close = (df_copy['Low'] - df_copy['Close'].shift()).abs()
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            for period in [7, 14]:
+                df_copy[f'ATR_{period}'] = true_range.rolling(window=period).mean()
+                df_copy[f'ATR_Percent_{period}'] = df_copy[f'ATR_{period}'] / df_copy['Close'] * 100
+
+            # CCI
+            tp = (df_copy['High'] + df_copy['Low'] + df_copy['Close']) / 3
+            sma = tp.rolling(window=14).mean()
+            mad = (tp - sma).abs().rolling(window=14).mean()
+            df_copy['CCI_14'] = (tp - sma) / (0.015 * mad)
+
+            return df_copy
         
         # 計算布林通道
         for period in [10, 20]:

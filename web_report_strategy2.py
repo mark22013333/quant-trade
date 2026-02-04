@@ -20,7 +20,7 @@ class SimpleWebReportAnalyzer:
         self.provider = YFinanceProvider()
         self.market_data = MarketData(self.provider)
     
-    def analyze_stock_list(self, stock_list, start_date, end_date):
+    def analyze_stock_list(self, stock_list, start_date, end_date, params=None):
         """
         分析股票列表，產生基本分析資料
         
@@ -41,7 +41,7 @@ class SimpleWebReportAnalyzer:
                     continue
                     
                 # 使用不會造成維度不匹配的安全方式計算指標
-                df = data.copy()
+                df = data.copy().sort_index()
                 
                 # 1. 波動率 (避免使用 np.diff)
                 # 使用 pct_change 計算日報酬率
@@ -56,20 +56,20 @@ class SimpleWebReportAnalyzer:
                 recent_vol = df['Volume'].tail(min(30, len(df)))
                 past_vol = df['Volume'].iloc[max(0, len(df)-90):max(0, len(df)-30)]
                 
-                avg_volume = float(recent_vol.mean().iloc[0]) if not recent_vol.empty else 0.0
-                past_avg_volume = float(past_vol.mean().iloc[0]) if not past_vol.empty else 1.0  # 避免除以0
+                avg_volume = float(recent_vol.mean()) if not recent_vol.empty else 0.0
+                past_avg_volume = float(past_vol.mean()) if not past_vol.empty else 1.0  # 避免除以0
                 volume_ratio = avg_volume / past_avg_volume if past_avg_volume > 0 else 1.0
                 
                 # 3. 趨勢分析 (純量計算，避免維度問題)
+                current_price = float(df['Close'].iloc[-1]) if len(df) > 0 else 0.0
                 if len(df) >= 20:
-                    current_price = float(df['Close'].iloc[-1].iloc[0])
-                    price_20d_ago = float(df['Close'].iloc[-min(20, len(df))].iloc[0])
+                    price_20d_ago = float(df['Close'].iloc[-min(20, len(df))])
                     trend_20d = ((current_price / price_20d_ago) - 1) * 100
                 else:
                     trend_20d = 0.0
                     
                 if len(df) >= 60:
-                    price_60d_ago = float(df['Close'].iloc[-min(60, len(df))].iloc[0])
+                    price_60d_ago = float(df['Close'].iloc[-min(60, len(df))])
                     trend_60d = ((current_price / price_60d_ago) - 1) * 100
                 else:
                     trend_60d = 0.0
@@ -151,9 +151,13 @@ class SimpleWebReportAnalyzer:
                 print(f"分析 {symbol} 時發生錯誤: {e}")
                 continue
         
-        return pd.DataFrame(results) if results else pd.DataFrame()
+        if results:
+            results_df = pd.DataFrame(results)
+            results_df = results_df.sort_values('score', ascending=False)
+            return results_df
+        return pd.DataFrame()
     
-    def analyze_industry_groups(self, industry_groups, start_date, end_date):
+    def analyze_industry_groups(self, industry_groups, start_date, end_date, params=None):
         """
         分析各產業群組的股票
         
@@ -166,7 +170,7 @@ class SimpleWebReportAnalyzer:
         
         for category, stocks in industry_groups.items():
             print(f"\n=== 分析{category} ===")
-            results = self.analyze_stock_list(stocks, start_date, end_date)
+            results = self.analyze_stock_list(stocks, start_date, end_date, params=params)
             industry_results[category] = results
             
             # 顯示前三名適合波段操作的股票

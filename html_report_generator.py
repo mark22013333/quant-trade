@@ -37,7 +37,7 @@ class HtmlReportGenerator:
         # 計算各產業的適合股票數量
         industry_counts = all_results.groupby(['category', 'suitable']).size().unstack(fill_value=0)
         
-        if industry_counts.empty or 'suitable_counts' in locals():
+        if industry_counts.empty:
             return None
             
         # 轉換為長格式數據
@@ -119,10 +119,12 @@ class HtmlReportGenerator:
         # 確保使用正值作為尺寸
         size_values = np.abs(all_results['score']) + 3  # 加上基礎值，確保點足夠大
             
+        y_col = 'avg_return' if 'avg_return' in all_results.columns else 'total_return'
+        y_label = '平均回報 (%)' if y_col == 'avg_return' else '總回報'
         fig = px.scatter(
             all_results,
             x='win_rate',
-            y='avg_return',  # 使用平均回報而非總回報
+            y=y_col,  # 使用平均回報或總回報
             color='category',
             size=size_values,  # 使用評分絕對值作為大小
             size_max=25,
@@ -131,7 +133,7 @@ class HtmlReportGenerator:
             title='勝率與平均回報關係',
             labels={
                 'win_rate': '勝率',
-                'avg_return': '平均回報 (%)',
+                y_col: y_label,
                 'category': '產業類別'
             },
             height=600
@@ -167,7 +169,7 @@ class HtmlReportGenerator:
         
         # 選擇顯示的欄位 (確保欄位存在)
         available_columns = formatted_data.columns.tolist()
-        desired_columns = ['symbol', 'name', 'category', 'score', 'win_rate', 'avg_return', 'num_trades', 'volatility']
+        desired_columns = ['symbol', 'name', 'category', 'score', 'win_rate', 'avg_return', 'total_return', 'num_trades', 'volatility']
         display_columns = [col for col in desired_columns if col in available_columns]
         
         table_df = formatted_data[display_columns]
@@ -262,6 +264,14 @@ class HtmlReportGenerator:
         if all_results.empty:
             print("沒有足夠的分析結果可供報表生成")
             return None
+
+        if 'avg_return' not in all_results.columns and 'total_return' in all_results.columns:
+            if 'num_trades' in all_results.columns:
+                denom = all_results['num_trades'].replace(0, np.nan)
+                all_results['avg_return'] = all_results['total_return'] / denom
+                all_results['avg_return'] = all_results['avg_return'].fillna(all_results['total_return'])
+            else:
+                all_results['avg_return'] = all_results['total_return']
         
         # 儲存原始資料為 CSV
         csv_file = os.path.join(self.output_dir, f"swing_analysis_data_{self.timestamp}.csv")

@@ -8,6 +8,7 @@ stock_list.txt 每行一個股票代號，例如：
 """
 import sys
 import os
+from pathlib import Path
 from download_data import download_stock
 
 def read_symbols(file_path):
@@ -24,6 +25,8 @@ if __name__ == "__main__":
     start = sys.argv[2]
     end = sys.argv[3]
     symbols = read_symbols(stock_list_path)
+    save_dir = Path(__file__).parent / "stock_data"
+    os.makedirs(save_dir, exist_ok=True)
     for symbol in symbols:
         print(f"下載 {symbol} ...")
-        download_stock(symbol, start, end, save_dir=".")
+        download_stock(symbol, start, end, save_dir=save_dir)

@@ -2,3 +2,10 @@ pandas
 numpy
 yfinance
 matplotlib
+seaborn
+plotly
+tqdm
+python-dotenv
+TA-Lib
+pyarrow
+pytest

@@ -50,8 +50,8 @@ class BaseStrategy(ABC):
         :return: 最佳參數組合
         """
         import itertools
-        from ..backtest.backtest_engine import BacktestEngine
-        from ..broker.paper_broker import PaperBroker
+        from backtest.backtest_engine import BacktestEngine
+        from broker.paper_broker import PaperBroker
         
         # 切分訓練集和測試集
         split_idx = int(len(data) * (1 - test_size))
@@ -65,6 +65,8 @@ class BaseStrategy(ABC):
         best_score = -float('inf')
         best_params = None
         
+        test_data = data.iloc[split_idx:]
+
         # 測試每個參數組合
         for params in param_combinations:
             # 設定當前參數
@@ -83,7 +85,7 @@ class BaseStrategy(ABC):
             if metric == 'total_return':
                 score = engine.result['total_return']
             elif metric == 'sharpe_ratio':
-                score = engine.result.get('sharpe_ratio', 0)
+                score = engine.result.get('sharpe', 0)
             elif metric == 'max_drawdown':
                 score = -engine.result['max_drawdown']  # 負號因為更小的回撤更好
                 
@@ -92,8 +94,23 @@ class BaseStrategy(ABC):
                 best_score = score
                 best_params = current_params
                 
-        # 設定為最佳參數
+        # 設定為最佳參數並回測測試集
         self.set_parameters(best_params)
+        if len(test_data) > 0:
+            broker = PaperBroker()
+            engine = BacktestEngine(test_data, self, broker)
+            engine.run()
+            self.last_optimization = {
+                'best_params': best_params,
+                'train_score': best_score,
+                'test_result': engine.result
+            }
+        else:
+            self.last_optimization = {
+                'best_params': best_params,
+                'train_score': best_score,
+                'test_result': None
+            }
         
         return best_params
         

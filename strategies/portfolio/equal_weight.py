@@ -3,6 +3,7 @@
 """
 import pandas as pd
 import numpy as np
+from utils.signals import add_signal_from_position
 from ..base_strategy import BaseStrategy
 
 class EqualWeightStrategy(BaseStrategy):
@@ -46,6 +47,7 @@ class EqualWeightStrategy(BaseStrategy):
         """處理單一股票資料"""
         df = data.copy()
         df['position'] = 1  # 等權重策略下對單一股票永遠是持有
+        df = add_signal_from_position(df)
         return df
     
     def _generate_signals_for_portfolio(self, data):
@@ -107,4 +109,10 @@ class EqualWeightStrategy(BaseStrategy):
                 if idx in result.index:
                     result.loc[idx, 'position'] = current_positions[stock]
         
+        # 為每個股票計算 signal
+        result['signal'] = (
+            result.groupby(level=1)['position']
+            .diff()
+            .fillna(0)
+        )
         return result

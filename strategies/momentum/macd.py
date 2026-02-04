@@ -3,6 +3,7 @@ MACD 指標交易策略
 """
 import pandas as pd
 import numpy as np
+from utils.signals import add_signal_from_position
 from ..base_strategy import BaseStrategy
 
 class MACDStrategy(BaseStrategy):
@@ -79,4 +80,5 @@ class MACDStrategy(BaseStrategy):
             else:
                 df.loc[df.index[i], 'position'] = df['position'].iloc[i-1]
         
+        df = add_signal_from_position(df)
         return df

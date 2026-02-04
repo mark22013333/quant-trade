@@ -3,6 +3,7 @@ RSI 相對強弱指標交易策略
 """
 import pandas as pd
 import numpy as np
+from utils.signals import add_signal_from_position
 from ..base_strategy import BaseStrategy
 
 class RSIStrategy(BaseStrategy):
@@ -59,7 +60,7 @@ class RSIStrategy(BaseStrategy):
             df['RSI'] = 100 - (100 / (1 + rs))
             
         # 填充可能的 NaN 值
-        df['RSI'].fillna(50, inplace=True)
+        df['RSI'] = df['RSI'].fillna(50)
         
         # 初始化部位欄位
         df['position'] = 0
@@ -114,4 +115,5 @@ class RSIStrategy(BaseStrategy):
                     
             df.loc[df.index[i], 'position'] = position
                 
+        df = add_signal_from_position(df)
         return df

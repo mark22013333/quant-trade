@@ -1,8 +1,10 @@
 """
 Yahoo Finance 資料提供者
 """
+import time
 import yfinance as yf
 import pandas as pd
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from .base_provider import DataProvider
 
@@ -11,7 +13,8 @@ class YFinanceProvider(DataProvider):
     使用 Yahoo Finance API 取得股市資料
     """
     def __init__(self):
-        self.cache = {}  # 簡單的資料快取
+        self.cache = OrderedDict()  # 簡單的資料快取 (LRU)
+        self.cache_limit = 100
     
     def get_historical_data(self, symbol, start_date, end_date=None, interval='1d'):
         """
@@ -28,48 +31,55 @@ class YFinanceProvider(DataProvider):
         cache_key = f"{symbol}_{start_date}_{end_date}_{interval}"
         
         if cache_key in self.cache:
+            self.cache.move_to_end(cache_key)
             return self.cache[cache_key]
             
-        try:
-            data = yf.download(
-                symbol, 
-                start=start_date, 
-                end=end_date, 
-                interval=interval,
-                auto_adjust=True  # 自動調整股價（考慮除權息）
-            )
-            
-            # 標準化欄位名稱
-            if not data.empty:
-                # 修正處理元組型態的欄位名稱
-                new_columns = {}
-                for col in data.columns:
-                    if isinstance(col, tuple):
-                        # 對於元組型態的欄位，使用第一個元素作為欄位名稱
-                        new_name = col[0].capitalize() if isinstance(col[0], str) else str(col[0])
-                        new_columns[col] = new_name
-                    else:
-                        new_columns[col] = col.capitalize() if isinstance(col, str) else str(col)
-                
-                data = data.rename(columns=new_columns)
-                
-                # 檢查並處理缺失值
-                data = data.ffill()  # 使用前一個有效值填充
-                
-                # 新增日期欄位（方便後續處理）
-                data['Date'] = data.index
-                
-                # 快取結果
-                self.cache[cache_key] = data
-                
-                return data
-            else:
-                print(f"警告：無法取得 {symbol} 的資料")
-                return pd.DataFrame()
-                
-        except Exception as e:
-            print(f"取得 {symbol} 歷史資料時發生錯誤: {str(e)}")
+        data = None
+        for attempt in range(3):
+            try:
+                data = yf.download(
+                    symbol, 
+                    start=start_date, 
+                    end=end_date, 
+                    interval=interval,
+                    auto_adjust=True  # 自動調整股價（考慮除權息）
+                )
+                break
+            except Exception as e:
+                if attempt == 2:
+                    print(f"取得 {symbol} 歷史資料時發生錯誤: {str(e)}")
+                    return pd.DataFrame()
+                time.sleep(1)
+
+        if data is None or data.empty:
+            print(f"警告：無法取得 {symbol} 的資料")
             return pd.DataFrame()
+
+        # 標準化欄位名稱
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
+        new_columns = {}
+        for col in data.columns:
+            if isinstance(col, tuple):
+                new_name = col[0].capitalize() if isinstance(col[0], str) else str(col[0])
+                new_columns[col] = new_name
+            else:
+                new_columns[col] = col.capitalize() if isinstance(col, str) else str(col)
+        data = data.rename(columns=new_columns)
+        
+        # 檢查並處理缺失值
+        data = data.ffill()  # 使用前一個有效值填充
+        
+        # 新增日期欄位（方便後續處理）
+        data['Date'] = data.index
+        
+        # 快取結果
+        self.cache[cache_key] = data
+        if len(self.cache) > self.cache_limit:
+            self.cache.popitem(last=False)
+        
+        return data
+                
     
     def get_realtime_data(self, symbols):
         """
