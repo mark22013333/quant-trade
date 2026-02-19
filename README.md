@@ -4,7 +4,7 @@
 
 ## 功能重點
 
-- 多資料來源（YFinance / Shioaji）
+- 多資料來源（YFinance / Shioaji*）
 - 可擴充策略架構，策略輸出統一為：
   - `position`：目標持倉（-1/0/1）
   - `signal`：進出場事件（`position.diff()`）
@@ -45,6 +45,7 @@ pip install -r requirements.txt
 ```
 
 > 注意：`TA-Lib` 可能需要系統層安裝（不易安裝時可先略過，特徵工程會自動降級為純 pandas 版本）。
+> 若要使用 Shioaji（實盤/模擬），請額外安裝 `shioaji` 並設定 `.env`。
 
 ### 3) 回測
 
@@ -71,7 +72,27 @@ python swing_analysis.py
 
 輸出位置：`./reports/`
 
-### 5) 執行測試
+### 5) 產生短期投資 Dashboard
+
+```bash
+python main.py --mode dashboard
+```
+
+輸出位置：
+- `reports/short_term_dashboard_<timestamp>.html`
+- `reports/short_term_top20_<timestamp>.csv`
+
+資料來源：
+- TWSE 上市公司清單（公開 CSV）
+- TWSE 當日成交資料（STOCK_DAY_ALL）
+
+你也可以用一鍵腳本：
+
+```bash
+./run_dashboard.sh
+```
+
+### 6) 執行測試
 
 ```bash
 pytest -q
@@ -110,11 +131,11 @@ SHIOAJI_CA_PERSON_ID=your_person_id
 - TA-Lib (可選)
 - pyarrow（Parquet 用）
 - pytest
+- shioaji（選配，實盤/模擬用）
 
 ## 注意
 - 本期流程以「回測 + 報表」為主
 - 實盤交易仍屬保留功能，需自行確認 API 連線與風險機制
+- `data/stock_data` 與 `reports` 目前被 `.gitignore` 排除，不會進版控
 
----
-
-如果你要把實盤交易流程也完整化，或想加入策略優化/資金控管規則，告訴我即可。
+> *Shioaji 為選配套件，需自行安裝與設定憑證。*

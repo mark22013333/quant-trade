@@ -206,3 +206,4 @@ __marimo__/
 *.json
 data/stock_data
 reports
+data/cache

@@ -14,11 +14,12 @@ echo "===================="
 echo "1) 執行波段交易分析"
 echo "2) 執行完整回測"
 echo "3) 產出波段分析報表"
+echo "4) 產生短期投資 Dashboard"
 echo "q) 離開"
 echo ""
 
 # shellcheck disable=SC2162
-read -p "請選擇功能 (1-3, q): " choice
+read -p "請選擇功能 (1-4, q): " choice
 
 case "$choice" in
   1)
@@ -32,6 +33,10 @@ case "$choice" in
   3)
     echo "產出波段分析報表..."
     python main.py --mode report
+    ;;
+  4)
+    echo "產生短期投資 Dashboard..."
+    python main.py --mode dashboard
     ;;
   q)
     echo "離開"

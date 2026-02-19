@@ -73,13 +73,22 @@ def run_report(_args):
     swing_analysis.main()
 
 
+def run_dashboard(_args):
+    from analysis.short_term_ranker import run_short_term_ranking
+    from dashboard_generator import generate_dashboard
+
+    output = run_short_term_ranking()
+    html_path = generate_dashboard(output.full_df, output.top20_df)
+    print(f"Dashboard 已產生: {html_path}")
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="台股量化交易系統")
     parser.add_argument(
         "--mode",
-        choices=["backtest", "report"],
+        choices=["backtest", "report", "dashboard"],
         default="backtest",
-        help="執行模式: backtest 或 report"
+        help="執行模式: backtest / report / dashboard"
     )
     parser.add_argument("--symbol", default="2330.TW", help="回測標的 (預設 2330.TW)")
     parser.add_argument("--start-date", dest="start_date", help="回測起始日 YYYY-MM-DD")
@@ -97,6 +106,8 @@ def main():
         run_backtest(args)
     elif args.mode == "report":
         run_report(args)
+    elif args.mode == "dashboard":
+        run_dashboard(args)
 
 
 if __name__ == "__main__":
