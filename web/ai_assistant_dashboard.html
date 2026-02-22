@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shioaji AI 協作中心</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Literata:wght@300;400;600&family=Unbounded:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+  {{INLINE_CSS}}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="hero-tag">Sinotrade · Shioaji</div>
+      <h1 class="hero-title">AI 協作中心</h1>
+      <p class="hero-subtitle">官方 AI 文件同步、提示詞模板、安裝指引與常用程式片段一次收斂。</p>
+      <div class="hero-meta">
+        <span class="badge">更新時間 {{UPDATED_AT}}</span>
+        <span class="badge">資料來源：Sinotrade 官方</span>
+        <span class="badge">模擬優先</span>
+      </div>
+    </header>
+
+    <section class="section">
+      <h2 class="section-title">文件狀態</h2>
+      <div class="grid grid-3">
+        <div class="card">
+          <h3>llms.txt</h3>
+          <div class="status-pill {{LLMS_STATUS_CLASS}}">{{LLMS_STATUS_TEXT}}</div>
+          <div class="status-meta">{{LLMS_STATUS_META}}</div>
+          <div class="status-meta">位置：docs/shioaji/llms.txt</div>
+        </div>
+        <div class="card">
+          <h3>llms-full.txt</h3>
+          <div class="status-pill {{LLMS_FULL_STATUS_CLASS}}">{{LLMS_FULL_STATUS_TEXT}}</div>
+          <div class="status-meta">{{LLMS_FULL_STATUS_META}}</div>
+          <div class="status-meta">位置：docs/shioaji/llms-full.txt</div>
+        </div>
+        <div class="card">
+          <h3>環境檢查</h3>
+          <div class="status-pill {{CHECK_STATUS_CLASS}}">{{CHECK_STATUS_TEXT}}</div>
+          <div class="status-meta">{{CHECK_STATUS_META}}</div>
+          <div class="status-meta">命令：python tools/shioaji_check.py</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">AI 協作安裝指令</h2>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>Claude Code</h3>
+          <div class="code-block" data-copy>
+            claude plugin install shioaji
+            <button class="copy-btn">COPY</button>
+          </div>
+          <p class="status-meta">安裝 Shioaji 官方 Claude Code plugin，啟用 AI 協作技能。</p>
+        </div>
+        <div class="card">
+          <h3>OpenAI Codex CLI</h3>
+          <div class="code-block" data-copy>
+            codex mcp add shioaji --command shioaji --args mcp
+            <button class="copy-btn">COPY</button>
+          </div>
+          <p class="status-meta">將 Shioaji MCP Server 加入 Codex CLI。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Getting Started Prompt</h2>
+      <div class="prompt-block">
+You are an expert in Shioaji trading API, a comprehensive solution for quantitative trading in Taiwan's financial market. Shioaji provides real-time market data, including stocks, futures, options, and indices, as well as trading capabilities. I would like you to assist me in developing a trading application using Shioaji API.
+
+Your task is to help me with the following:
+1. Getting Started: Provide instructions for installing Shioaji and setting up the development environment. Explain how to obtain API keys or tokens and how to authenticate with the Shioaji API.
+2. Data Retrieval: Guide me in fetching real-time market data, historical price data, and other relevant data sources using Shioaji. Explain the data structures and formats used by the API and how to process the data effectively.
+3. Trading Strategies: Provide guidance on implementing trading strategies using Shioaji API. This includes explaining how to place orders, manage positions, set stop-loss and take-profit levels, and handle trade executions. Offer insights on common trading strategy patterns and best practices for strategy development.
+4. Backtesting: Explain how to perform backtesting on historical data using Shioaji API or other suitable libraries. Provide examples of how to evaluate trading strategies, calculate performance metrics, and analyze results.
+5. Error Handling and Risk Management: Offer advice on handling errors, exceptions, and edge cases when working with the Shioaji API. Explain how to implement risk management techniques, such as position sizing, portfolio diversification, and trade risk assessment.
+
+Please provide clear explanations, code examples, and best practices for each aspect. Feel free to ask me any questions to clarify my requirements or trading objectives.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Best Practices 摘要</h2>
+      <div class="card">
+        <ul class="list">
+          <li>提供完整上下文與檔案路徑，讓 AI 能精準定位並更新程式。</li>
+          <li>引用官方文件與範例，並用 llms-full.txt 提供全面參考。</li>
+          <li>先在模擬環境測試，再部署到真實交易。</li>
+          <li>驗證範例、測試結果與帳號權限，避免誤用。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">常用程式片段</h2>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>登入 + 合約</h3>
+          <div class="code-block" data-copy>
+import shioaji as sj
+api = sj.Shioaji(simulation=True)
+api.login(api_key, secret_key)
+contract = api.Contracts.Stocks["2330"]
+            <button class="copy-btn">COPY</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>訂閱 Tick / BidAsk</h3>
+          <div class="code-block" data-copy>
+api.quote.subscribe(contract, quote_type="tick")
+api.quote.subscribe(contract, quote_type="bidask")
+            <button class="copy-btn">COPY</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>下單範例（限價）</h3>
+          <div class="code-block" data-copy>
+order = api.Order(price=9.6, quantity=1, action="Buy", price_type="LMT", order_type="ROD")
+trade = api.place_order(contract, order)
+            <button class="copy-btn">COPY</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>快照資料</h3>
+          <div class="code-block" data-copy>
+snapshot = api.snapshots([contract])
+            <button class="copy-btn">COPY</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">Generated by quant-trade · Shioaji AI Collaboration</div>
+  </div>
+
+  <script>
+    document.querySelectorAll('[data-copy]').forEach(block => {
+      const button = block.querySelector('.copy-btn');
+      if (!button) return;
+      button.addEventListener('click', () => {
+        const text = block.innerText.replace('COPY', '').trim();
+        navigator.clipboard.writeText(text);
+        button.textContent = 'COPIED';
+        setTimeout(() => { button.textContent = 'COPY'; }, 1500);
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,228 @@
+:root {
+  --ink: #0f1117;
+  --paper: #f6f1e7;
+  --paper-2: #fffaf1;
+  --accent: #e35d3d;
+  --accent-2: #1f8a8c;
+  --accent-3: #f0b429;
+  --muted: #6b7280;
+  --shadow: rgba(15, 17, 23, 0.12);
+  --border: rgba(15, 17, 23, 0.08);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Literata", serif;
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 680px at 15% -10%, rgba(227, 93, 61, 0.18), transparent 60%),
+    radial-gradient(900px 640px at 95% 5%, rgba(31, 138, 140, 0.18), transparent 60%),
+    linear-gradient(120deg, #fef7ea 0%, #f7f1e7 48%, #f1eadf 100%);
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 28px 72px;
+}
+
+.hero {
+  position: relative;
+  background: var(--paper-2);
+  border-radius: 24px;
+  padding: 32px 36px 28px;
+  box-shadow: 0 24px 60px var(--shadow);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  right: -90px;
+  top: -120px;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(240, 180, 41, 0.25), transparent 65%);
+  opacity: 0.7;
+}
+
+.hero-tag {
+  font-family: "Unbounded", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+}
+
+.hero-title {
+  font-family: "Unbounded", sans-serif;
+  font-size: 36px;
+  margin: 12px 0 8px;
+}
+
+.hero-subtitle {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-family: "Unbounded", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.section {
+  margin-top: 28px;
+}
+
+.section-title {
+  font-family: "Unbounded", sans-serif;
+  font-size: 20px;
+  margin: 0 0 14px;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+}
+
+.grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.card {
+  background: white;
+  border-radius: 18px;
+  padding: 18px 18px 16px;
+  box-shadow: 0 16px 40px var(--shadow);
+  border: 1px solid var(--border);
+}
+
+.card h3 {
+  font-family: "Unbounded", sans-serif;
+  font-size: 14px;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-family: "Unbounded", sans-serif;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.status-pill.ok {
+  background: rgba(31, 138, 140, 0.14);
+  color: #0f5f5c;
+}
+
+.status-pill.warn {
+  background: rgba(240, 180, 41, 0.16);
+  color: #9a6d00;
+}
+
+.status-pill.missing {
+  background: rgba(227, 93, 61, 0.15);
+  color: #b1371f;
+}
+
+.status-meta {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.code-block {
+  background: #0f1117;
+  color: #fef7ea;
+  padding: 14px;
+  border-radius: 12px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12.5px;
+  position: relative;
+  overflow: auto;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  font-family: "Unbounded", sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.prompt-block {
+  background: #fff8ee;
+  border-radius: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+.list {
+  margin: 0;
+  padding-left: 18px;
+  color: #1f2937;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.keyline {
+  height: 1px;
+  background: linear-gradient(90deg, rgba(15, 17, 23, 0), rgba(15, 17, 23, 0.15), rgba(15, 17, 23, 0));
+  margin: 20px 0;
+}
+
+.footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 36px;
+}
+
+@media (max-width: 980px) {
+  .grid-3, .grid-2 {
+    grid-template-columns: 1fr;
+  }
+  .hero-title {
+    font-size: 28px;
+  }
+}

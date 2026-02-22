@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quant-Trade 控制台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Source+Serif+4:wght@300;400;600&family=Unbounded:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    {{INLINE_CSS}}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="hero-kicker">Quant-Trade</div>
+      <h1 class="hero-title">控制台 · 一鍵產出與交易 API 測試</h1>
+      <p class="hero-subtitle">在同一頁完成報表產生、Shioaji 模擬驗證與正式環境切換檢核。</p>
+      <div class="hero-badges">
+        <span class="badge">回測 + 報表</span>
+        <span class="badge">Shioaji 測試流程</span>
+        <span class="badge">正式切換檢核</span>
+      </div>
+    </header>
+
+    <section class="section">
+      <h2 class="section-title">快速動作</h2>
+      <div class="grid grid-3">
+        <div class="card">
+          <h3>短期投資 Dashboard</h3>
+          <p>重新計算短期排名，產生 Top20 HTML 與 CSV 報表。</p>
+          <div class="form-grid">
+            <label>Top N
+              <input type="number" id="short-top" value="20" min="5" max="200" />
+            </label>
+            <label>流動性預篩
+              <input type="number" id="short-preselect" value="300" min="50" max="1000" />
+            </label>
+            <label>回溯天數
+              <input type="number" id="short-lookback" value="90" min="30" max="365" />
+            </label>
+          </div>
+          <button class="action-btn" data-action="short-term">產生短期 Dashboard</button>
+          <div class="progress"><span data-progress="short-term"></span></div>
+          <div class="status" data-status="short-term"></div>
+        </div>
+        <div class="card">
+          <h3>波段分析報表</h3>
+          <p>執行波段分析策略，產出 HTML 互動報表。</p>
+          <div class="form-grid">
+            <label>開始日期
+              <input type="date" id="swing-start" />
+            </label>
+            <label>結束日期
+              <input type="date" id="swing-end" />
+            </label>
+            <label>回溯天數
+              <input type="number" id="swing-lookback" value="365" min="60" max="730" />
+            </label>
+          </div>
+          <button class="action-btn secondary" data-action="swing-report">產生波段報表</button>
+          <div class="progress"><span data-progress="swing-report"></span></div>
+          <div class="status" data-status="swing-report"></div>
+        </div>
+        <div class="card">
+          <h3>Shioaji AI 協作中心</h3>
+          <p>同步官方 llms 文件並生成 AI 協作中心頁面。</p>
+          <label class="checkbox">
+            <input type="checkbox" id="ai-force" />
+            強制重新同步文件
+          </label>
+          <button class="action-btn ghost" data-action="ai-assistant">產生 AI 協作中心</button>
+          <div class="progress"><span data-progress="ai-assistant"></span></div>
+          <div class="status" data-status="ai-assistant"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Shioaji 交易測試中心</h2>
+      <div class="inline-controls">
+        <label class="checkbox">
+          <input type="checkbox" id="trade-sim" checked />
+          使用模擬環境（simulation=True）
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="allow-live-order" />
+          允許正式環境下單測試
+        </label>
+        <button class="ghost-btn" id="refresh-shioaji-env">更新環境檢查</button>
+      </div>
+      <div class="diagnose-tip" id="shioaji-env-tip">讀取 Shioaji 環境中…</div>
+      <div class="form-grid trade-config-grid">
+        <label>證券代號
+          <input type="text" id="trade-stock-code" value="2890" />
+        </label>
+        <label>證券數量
+          <input type="number" id="trade-stock-qty" value="1" min="1" max="10" />
+        </label>
+        <label>證券測試價格（選填）
+          <input type="number" id="trade-stock-price" placeholder="留白採用參考價" min="1" step="0.01" />
+        </label>
+        <label>期貨商品代號
+          <input type="text" id="trade-futures-code" value="TXFC0" />
+        </label>
+        <label>期貨口數
+          <input type="number" id="trade-futures-qty" value="1" min="1" max="10" />
+        </label>
+        <label>期貨測試價格（選填）
+          <input type="number" id="trade-futures-price" placeholder="留白採用參考價" min="1" step="0.01" />
+        </label>
+        <label>證券/期貨最小間隔（秒）
+          <input type="number" id="trade-interval" value="1.1" min="1" max="5" step="0.1" />
+        </label>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>模擬流程測試</h3>
+          <p>可分別驗證登入、證券下單、期貨下單；也可一鍵跑完整模擬流程。</p>
+
+          <div class="action-row">
+            <button class="action-btn" data-action="shioaji-login-test">登入測試</button>
+            <div class="progress"><span data-progress="shioaji-login-test"></span></div>
+            <div class="status" data-status="shioaji-login-test"></div>
+            <div class="result" data-result="shioaji-login-test"></div>
+          </div>
+
+          <div class="action-row">
+            <button class="action-btn secondary" data-action="shioaji-stock-test">證券下單測試</button>
+            <div class="progress"><span data-progress="shioaji-stock-test"></span></div>
+            <div class="status" data-status="shioaji-stock-test"></div>
+            <div class="result" data-result="shioaji-stock-test"></div>
+          </div>
+
+          <div class="action-row">
+            <button class="action-btn secondary" data-action="shioaji-futures-test">期貨下單測試</button>
+            <div class="progress"><span data-progress="shioaji-futures-test"></span></div>
+            <div class="status" data-status="shioaji-futures-test"></div>
+            <div class="result" data-result="shioaji-futures-test"></div>
+          </div>
+
+          <div class="action-row">
+            <button class="action-btn ghost" data-action="shioaji-simulation-suite">一鍵模擬整套測試</button>
+            <div class="progress"><span data-progress="shioaji-simulation-suite"></span></div>
+            <div class="status" data-status="shioaji-simulation-suite"></div>
+            <div class="result" data-result="shioaji-simulation-suite"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>正式環境切換</h3>
+          <p>檢查 token 正式權限、帳戶 signed 狀態、CA 設定是否符合切換條件。</p>
+          <div class="diagnose-tip" id="switch-tip">尚未檢核</div>
+
+          <div class="action-row">
+            <button class="action-btn" data-action="shioaji-verify-production">檢核正式環境</button>
+            <div class="progress"><span data-progress="shioaji-verify-production"></span></div>
+            <div class="status" data-status="shioaji-verify-production"></div>
+            <div class="result" data-result="shioaji-verify-production"></div>
+          </div>
+
+          <div class="card-hint">
+            <strong>切換說明：</strong>
+            <div>1. 先在模擬環境完成登入/證券/期貨測試。</div>
+            <div>2. 若顯示「未開通正式權限」，請到永豐 API 管理頁開通並重發 key。</div>
+            <div>3. 官方審核後，用本頁「檢核正式環境」確認 signed=True。</div>
+            <div>4. 切換到正式環境後，若要下單請另外勾選「允許正式環境下單測試」。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">帳戶資訊</h2>
+      <div class="inline-controls">
+        <label class="checkbox">
+          <input type="checkbox" id="account-sim" />
+          使用模擬帳戶
+        </label>
+        <span class="inline-note">正式帳戶會讀取真實資金資訊</span>
+      </div>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>交割帳戶餘額</h3>
+          <p>查詢股票帳戶可用餘額。</p>
+          <button class="action-btn" data-action="account-balance">查詢餘額</button>
+          <div class="progress"><span data-progress="account-balance"></span></div>
+          <div class="status" data-status="account-balance"></div>
+          <div class="result" data-result="account-balance"></div>
+        </div>
+        <div class="card">
+          <h3>可用買進額度</h3>
+          <p>查詢可用買進資金（若 API 不支援會回傳餘額資訊）。</p>
+          <button class="action-btn secondary" data-action="account-funds">查詢可用額度</button>
+          <div class="progress"><span data-progress="account-funds"></span></div>
+          <div class="status" data-status="account-funds"></div>
+          <div class="result" data-result="account-funds"></div>
+        </div>
+        <div class="card">
+          <h3>交割明細</h3>
+          <p>查詢 T / T+1 / T+2 交割資訊。</p>
+          <button class="action-btn ghost" data-action="settlements">查詢交割明細</button>
+          <div class="progress"><span data-progress="settlements"></span></div>
+          <div class="status" data-status="settlements"></div>
+          <div class="result" data-result="settlements"></div>
+        </div>
+        <div class="card">
+          <h3>持倉明細</h3>
+          <p>查詢目前股票持倉明細。</p>
+          <button class="action-btn" data-action="positions">查詢持倉</button>
+          <div class="progress"><span data-progress="positions"></span></div>
+          <div class="status" data-status="positions"></div>
+          <div class="result" data-result="positions"></div>
+        </div>
+        <div class="card">
+          <h3>一鍵帳戶診斷</h3>
+          <p>一次檢查環境、登入、帳戶、餘額、持倉與交割。</p>
+          <div class="diagnose-tip" id="diagnose-tip">尚未診斷</div>
+          <button class="action-btn secondary" data-action="account-diagnose">開始診斷</button>
+          <div class="progress"><span data-progress="account-diagnose"></span></div>
+          <div class="status" data-status="account-diagnose"></div>
+          <div class="result" data-result="account-diagnose"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>注意事項</h3>
+        <ul class="list">
+          <li>需先設定 .env 的 APIKEY / SECRET</li>
+          <li>正式下單一定要有 CA 設定，並確認帳戶風險控管</li>
+          <li>正式環境預設不允許下單測試，避免誤下真單</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">執行紀錄</h2>
+      <div class="inline-controls">
+        <span class="inline-note">後端心跳：<span id="heartbeat">--</span></span>
+        <button class="ghost-btn" id="refresh-log">更新後端 Log</button>
+        <button class="ghost-btn" id="post-test">測試 POST</button>
+      </div>
+      <div class="log" id="log">等待指令中…</div>
+      <div class="log log-secondary" id="server-log">後端 Log 尚未載入…</div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">最近報表</h2>
+      <div class="card">
+        <ul class="report-list" id="report-list"></ul>
+      </div>
+    </section>
+
+    <div class="footer">Generated by quant-trade · 控制台模式</div>
+  </div>
+
+  <script>
+    const logEl = document.getElementById('log');
+    const serverLogEl = document.getElementById('server-log');
+    const reportList = document.getElementById('report-list');
+    const heartbeatEl = document.getElementById('heartbeat');
+    const pollers = {};
+    const ACTION_LABELS = {
+      'short-term': '短期 Dashboard',
+      'swing-report': '波段報表',
+      'ai-assistant': 'AI 協作中心',
+      'account-balance': '交割帳戶餘額',
+      'account-funds': '可用買進額度',
+      'settlements': '交割明細',
+      'positions': '持倉明細',
+      'account-diagnose': '一鍵帳戶診斷',
+      'shioaji-login-test': 'Shioaji 登入測試',
+      'shioaji-stock-test': '證券下單測試',
+      'shioaji-futures-test': '期貨下單測試',
+      'shioaji-simulation-suite': '模擬整套測試',
+      'shioaji-verify-production': '正式環境檢核'
+    };
+    const STATE_LABELS = {
+      idle: '待命',
+      running: '執行中',
+      done: '完成',
+      error: '失敗'
+    };
+
+    function actionLabel(action) {
+      return ACTION_LABELS[action] || action;
+    }
+
+    function appendLog(message) {
+      const timestamp = new Date().toLocaleTimeString();
+      logEl.textContent = `[${timestamp}] ${message}\n` + logEl.textContent;
+    }
+
+    function toNumber(value, fallback = null) {
+      const parsed = Number(value);
+      if (Number.isNaN(parsed) || value === '') return fallback;
+      return parsed;
+    }
+
+    function getTradeParams() {
+      return {
+        simulation: document.getElementById('trade-sim').checked,
+        allow_live_order: document.getElementById('allow-live-order').checked,
+        stock_code: document.getElementById('trade-stock-code').value || '2890',
+        stock_quantity: toNumber(document.getElementById('trade-stock-qty').value, 1),
+        stock_price: toNumber(document.getElementById('trade-stock-price').value, null),
+        futures_code: document.getElementById('trade-futures-code').value || 'TXFC0',
+        futures_quantity: toNumber(document.getElementById('trade-futures-qty').value, 1),
+        futures_price: toNumber(document.getElementById('trade-futures-price').value, null),
+        interval_sec: toNumber(document.getElementById('trade-interval').value, 1.1)
+      };
+    }
+
+    async function refreshReports() {
+      const res = await fetch('/api/reports');
+      const data = await res.json();
+      reportList.innerHTML = '';
+      data.reports.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'report-item';
+        const link = document.createElement('a');
+        link.href = item.url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = item.name;
+        const meta = document.createElement('span');
+        meta.textContent = item.updated;
+        li.appendChild(link);
+        li.appendChild(meta);
+        reportList.appendChild(li);
+      });
+    }
+
+    async function refreshHeartbeat() {
+      try {
+        const res = await fetch('/api/ping');
+        const data = await res.json();
+        heartbeatEl.textContent = `${data.time} (pid:${data.pid})`;
+      } catch (err) {
+        heartbeatEl.textContent = '無法連線';
+      }
+    }
+
+    async function refreshServerLog() {
+      try {
+        const res = await fetch('/api/log');
+        const data = await res.json();
+        if (Array.isArray(data.lines)) {
+          serverLogEl.textContent = data.lines.slice(-120).join('\n') || '後端 Log 空白';
+        }
+      } catch (err) {
+        serverLogEl.textContent = '後端 Log 讀取失敗';
+      }
+    }
+
+    async function refreshShioajiEnv() {
+      const tipEl = document.getElementById('shioaji-env-tip');
+      try {
+        const res = await fetch('/api/shioaji/env');
+        const payload = await res.json();
+        const data = payload.data || {};
+        const hasKey = !!data.SHIOAJI_APIKEY;
+        const hasSecret = !!data.SHIOAJI_SECRET;
+        const hasCA = !!data.SHIOAJI_CA_PATH && !!data.SHIOAJI_CA_PASSWORD;
+        const isSimulation = document.getElementById('trade-sim').checked;
+        const mode = isSimulation ? '模擬模式' : '正式模式';
+
+        if (hasKey && hasSecret) {
+          if (hasCA) {
+            tipEl.textContent = `${mode}：已讀取 APIKEY/SECRET，CA 已設定，可直接執行測試。`;
+            tipEl.className = 'diagnose-tip ok';
+          } else if (isSimulation) {
+            tipEl.textContent = `${mode}：已讀取 APIKEY/SECRET，CA 未設定（模擬測試可繼續）。`;
+            tipEl.className = 'diagnose-tip';
+          } else {
+            tipEl.textContent = `${mode}：已讀取 APIKEY/SECRET，但 CA 未設定（正式下單會失敗）。`;
+            tipEl.className = 'diagnose-tip warn';
+          }
+        } else {
+          tipEl.textContent = '缺少 SHIOAJI_APIKEY 或 SHIOAJI_SECRET，請先補齊 .env。';
+          tipEl.className = 'diagnose-tip warn';
+        }
+      } catch (err) {
+        tipEl.textContent = 'Shioaji 環境讀取失敗，請確認後端正在執行。';
+        tipEl.className = 'diagnose-tip warn';
+      }
+    }
+
+    function getParams(action) {
+      if (action === 'short-term') {
+        return {
+          top_n: Number(document.getElementById('short-top').value || 20),
+          preselect_n: Number(document.getElementById('short-preselect').value || 300),
+          lookback_days: Number(document.getElementById('short-lookback').value || 90)
+        };
+      }
+      if (action === 'swing-report') {
+        const start = document.getElementById('swing-start').value || null;
+        const end = document.getElementById('swing-end').value || null;
+        return {
+          start_date: start,
+          end_date: end,
+          lookback_days: Number(document.getElementById('swing-lookback').value || 365)
+        };
+      }
+      if (action === 'ai-assistant') {
+        return {
+          force: document.getElementById('ai-force').checked
+        };
+      }
+      if (['account-balance', 'account-funds', 'settlements', 'positions', 'account-diagnose'].includes(action)) {
+        return {
+          simulation: document.getElementById('account-sim').checked
+        };
+      }
+      if (['shioaji-login-test', 'shioaji-stock-test', 'shioaji-futures-test', 'shioaji-simulation-suite', 'shioaji-verify-production'].includes(action)) {
+        return getTradeParams();
+      }
+      return {};
+    }
+
+    function updateProgress(action, progress) {
+      const bar = document.querySelector(`[data-progress="${action}"]`);
+      if (!bar) return;
+      bar.style.width = `${progress}%`;
+      bar.textContent = progress >= 15 ? `${progress}%` : '';
+    }
+
+    function updateResult(action, result) {
+      const resultEl = document.querySelector(`[data-result="${action}"]`);
+      if (resultEl) {
+        if (!result) {
+          resultEl.textContent = '';
+        } else {
+          const summary = [];
+          if (result.message) summary.push(`摘要：${result.message}`);
+          if (Array.isArray(result.next_steps) && result.next_steps.length > 0) {
+            summary.push(`建議下一步：${result.next_steps[0]}`);
+          }
+          const summaryText = summary.length > 0 ? `${summary.join('\n')}\n\n` : '';
+          resultEl.textContent = `${summaryText}${JSON.stringify(result, null, 2)}`;
+        }
+      }
+
+      if (action === 'account-diagnose') {
+        const tipEl = document.getElementById('diagnose-tip');
+        if (!tipEl || !result) return;
+        const prod = result.production_permission;
+        if (prod === true) {
+          tipEl.textContent = '正式盤權限：已開通，可切換正式帳戶查詢';
+          tipEl.className = 'diagnose-tip ok';
+        } else if (prod === false) {
+          tipEl.textContent = '正式盤權限：未開通，先使用模擬模式或申請開通';
+          tipEl.className = 'diagnose-tip warn';
+        } else {
+          tipEl.textContent = '正式盤權限：未知，請先執行正式環境檢核';
+          tipEl.className = 'diagnose-tip';
+        }
+      }
+
+      if (action === 'shioaji-verify-production') {
+        const switchTip = document.getElementById('switch-tip');
+        if (!switchTip || !result) return;
+        if (result.passed === true) {
+          switchTip.textContent = '正式環境可切換（條件通過）';
+          switchTip.className = 'diagnose-tip ok';
+        } else if (result.passed === false) {
+          const firstStep = Array.isArray(result.next_steps) && result.next_steps.length > 0
+            ? result.next_steps[0]
+            : '請查看結果中的 next_steps';
+          switchTip.textContent = `正式環境尚不可切換：${firstStep}`;
+          switchTip.className = 'diagnose-tip warn';
+        }
+      }
+    }
+
+    async function pollStatus(action) {
+      const res = await fetch(`/api/status/${action}`);
+      const payload = await res.json();
+      const data = payload.data;
+      const statusEl = document.querySelector(`[data-status="${action}"]`);
+      if (statusEl) {
+        const elapsed = data.elapsed ? `｜${data.elapsed}s` : '';
+        const stateText = STATE_LABELS[data.state] || data.state;
+        statusEl.textContent = `${data.message}（${stateText}）${elapsed}`;
+      }
+      updateProgress(action, data.progress || 0);
+      updateResult(action, data.result || null);
+      if (Array.isArray(data.log) && data.log.length > 0) {
+        appendLog(`${actionLabel(action)}：${data.log[0]}`);
+      }
+      if (data.state === 'done' || data.state === 'error') {
+        clearInterval(pollers[action]);
+        pollers[action] = null;
+        await refreshReports();
+      }
+    }
+
+    async function runAction(action) {
+      const label = actionLabel(action);
+      const statusEl = document.querySelector(`[data-status="${action}"]`);
+      if (statusEl) statusEl.textContent = '送出請求中…';
+      appendLog(`開始執行 ${label}...`);
+      try {
+        const res = await fetch(`/api/run/${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(getParams(action))
+        });
+        const data = await res.json();
+        if (data.status !== 'ok') {
+          const errMsg = data.error || '無法啟動，請稍後再試';
+          if (statusEl) statusEl.textContent = `無法啟動：${errMsg}`;
+          appendLog(`${label} 無法啟動：${errMsg}`);
+          return;
+        }
+        if (pollers[action]) clearInterval(pollers[action]);
+        await pollStatus(action);
+        pollers[action] = setInterval(() => pollStatus(action), 1500);
+      } catch (err) {
+        const errMsg = err?.message || '請確認後端是否啟動，或重新整理頁面';
+        if (statusEl) statusEl.textContent = `連線失敗：${errMsg}`;
+        appendLog(`${label} 執行失敗：${errMsg}`);
+      }
+    }
+
+    document.querySelectorAll('[data-action]').forEach(btn => {
+      btn.addEventListener('click', () => runAction(btn.dataset.action));
+    });
+
+    document.getElementById('refresh-log').addEventListener('click', refreshServerLog);
+    document.getElementById('refresh-shioaji-env').addEventListener('click', refreshShioajiEnv);
+    document.getElementById('trade-sim').addEventListener('change', refreshShioajiEnv);
+
+    document.getElementById('post-test').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/echo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ping: 'ok', at: new Date().toISOString() })
+        });
+        const data = await res.json();
+        appendLog(`POST 測試成功：${JSON.stringify(data)}`);
+      } catch (err) {
+        appendLog(`POST 測試失敗：${err?.message || err}`);
+      }
+    });
+
+    refreshReports();
+    refreshHeartbeat();
+    refreshServerLog();
+    refreshShioajiEnv();
+    setInterval(refreshHeartbeat, 5000);
+  </script>
+</body>
+</html>
