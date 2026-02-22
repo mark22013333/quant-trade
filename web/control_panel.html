@@ -6,7 +6,7 @@
   <title>Quant-Trade 控制台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Source+Serif+4:wght@300;400;600&family=Unbounded:wght@400;600;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     {{INLINE_CSS}}
   </style>
@@ -14,65 +14,141 @@
 <body>
   <div class="page">
     <header class="hero">
-      <div class="hero-kicker">Quant-Trade</div>
-      <h1 class="hero-title">控制台 · 一鍵產出與交易 API 測試</h1>
-      <p class="hero-subtitle">在同一頁完成報表產生、Shioaji 模擬驗證與正式環境切換檢核。</p>
-      <div class="hero-badges">
-        <span class="badge">回測 + 報表</span>
-        <span class="badge">Shioaji 測試流程</span>
-        <span class="badge">正式切換檢核</span>
+      <div class="hero-kicker">Quant-Trade Command Center</div>
+      <h1 class="hero-title">多策略波段工作台 + Shioaji 驗證中心</h1>
+      <p class="hero-subtitle">在同一個介面完成策略組合、參數設定、回測、模擬交易測試與正式環境切換檢核。結果同時提供可讀化摘要與原始 JSON。</p>
+      <div class="hero-tags">
+        <span class="tag">A/B/C 策略加權投票</span>
+        <span class="tag">T+1 模擬成交</span>
+        <span class="tag">共用風控規則</span>
+        <span class="tag">Shioaji 模擬/正式檢核</span>
       </div>
     </header>
 
     <section class="section">
-      <h2 class="section-title">快速動作</h2>
-      <div class="grid grid-3">
-        <div class="card">
-          <h3>短期投資 Dashboard</h3>
-          <p>重新計算短期排名，產生 Top20 HTML 與 CSV 報表。</p>
-          <div class="form-grid">
-            <label>Top N
-              <input type="number" id="short-top" value="20" min="5" max="200" />
+      <h2 class="section-title">Multi-Strategy Workbench</h2>
+      <div class="workbench-grid">
+        <div class="panel">
+          <h3>回測設定</h3>
+          <p>設定標的、策略開關、權重與風控參數，執行多策略波段回測。</p>
+
+          <div class="form-grid two">
+            <label>股票代號
+              <input type="text" id="strategy-symbol" value="2330.TW" />
             </label>
-            <label>流動性預篩
-              <input type="number" id="short-preselect" value="300" min="50" max="1000" />
+            <label>市場
+              <select id="strategy-market">
+                <option value="TW" selected>TW</option>
+                <option value="US">US</option>
+              </select>
             </label>
-            <label>回溯天數
-              <input type="number" id="short-lookback" value="90" min="30" max="365" />
-            </label>
-          </div>
-          <button class="action-btn" data-action="short-term">產生短期 Dashboard</button>
-          <div class="progress"><span data-progress="short-term"></span></div>
-          <div class="status" data-status="short-term"></div>
-        </div>
-        <div class="card">
-          <h3>波段分析報表</h3>
-          <p>執行波段分析策略，產出 HTML 互動報表。</p>
-          <div class="form-grid">
             <label>開始日期
-              <input type="date" id="swing-start" />
+              <input type="date" id="strategy-start" />
             </label>
             <label>結束日期
-              <input type="date" id="swing-end" />
-            </label>
-            <label>回溯天數
-              <input type="number" id="swing-lookback" value="365" min="60" max="730" />
+              <input type="date" id="strategy-end" />
             </label>
           </div>
-          <button class="action-btn secondary" data-action="swing-report">產生波段報表</button>
-          <div class="progress"><span data-progress="swing-report"></span></div>
-          <div class="status" data-status="swing-report"></div>
+
+          <div class="strategy-switches">
+            <div class="strategy-switch">
+              <label class="checkbox-line"><input type="checkbox" id="stg-a-enabled" checked />策略 A - Momentum & Trend</label>
+              <input type="number" id="stg-a-weight" value="0.4" min="0" max="1" step="0.05" />
+            </div>
+            <div class="strategy-switch">
+              <label class="checkbox-line"><input type="checkbox" id="stg-b-enabled" checked />策略 B - Mean Reversion</label>
+              <input type="number" id="stg-b-weight" value="0.3" min="0" max="1" step="0.05" />
+            </div>
+            <div class="strategy-switch">
+              <label class="checkbox-line"><input type="checkbox" id="stg-c-enabled" checked />策略 C - Chip Flow (TW)</label>
+              <input type="number" id="stg-c-weight" value="0.3" min="0" max="1" step="0.05" />
+            </div>
+          </div>
+
+          <div class="form-grid three">
+            <label>投票門檻
+              <input type="number" id="strategy-threshold" value="0.6" min="0" max="1" step="0.05" />
+            </label>
+            <label>每筆風險比例
+              <input type="number" id="risk-fraction" value="0.01" min="0.001" max="0.05" step="0.001" />
+            </label>
+            <label>初始資金
+              <input type="number" id="bt-capital" value="1000000" min="100000" step="10000" />
+            </label>
+          </div>
+
+          <div class="form-grid three">
+            <label>停損 (%)
+              <input type="number" id="risk-stop-loss" value="0.05" min="0.01" max="0.2" step="0.01" />
+            </label>
+            <label>ATR 倍數
+              <input type="number" id="risk-atr-mult" value="2" min="1" max="5" step="0.1" />
+            </label>
+            <label>移動停利啟動報酬
+              <input type="number" id="risk-trail-activate" value="0.10" min="0.02" max="0.3" step="0.01" />
+            </label>
+            <label>回檔停利 (%)
+              <input type="number" id="risk-trail-drawdown" value="0.03" min="0.01" max="0.1" step="0.01" />
+            </label>
+            <label>時間出場天數
+              <input type="number" id="risk-max-holding" value="10" min="3" max="30" step="1" />
+            </label>
+            <label>時間出場最低報酬
+              <input type="number" id="risk-min-return" value="0.02" min="0" max="0.1" step="0.005" />
+            </label>
+          </div>
+
+          <div class="form-grid three">
+            <label>手續費率
+              <input type="number" id="bt-commission" value="0.001425" min="0" max="0.01" step="0.0001" />
+            </label>
+            <label>交易稅率
+              <input type="number" id="bt-tax" value="0.003" min="0" max="0.01" step="0.0001" />
+            </label>
+            <label>滑價率
+              <input type="number" id="bt-slippage" value="0.001" min="0" max="0.02" step="0.0005" />
+            </label>
+          </div>
+
+          <div class="action-row">
+            <button class="action-btn" data-action="strategy-backtest">執行多策略回測</button>
+            <div class="progress"><span data-progress="strategy-backtest"></span></div>
+            <div class="status" data-status="strategy-backtest"></div>
+            <div class="result" data-result="strategy-backtest"></div>
+          </div>
+
+          <div class="action-row">
+            <button class="action-btn secondary" data-action="strategy-backtest-export">回測並匯出 CSV/JSON</button>
+            <div class="progress"><span data-progress="strategy-backtest-export"></span></div>
+            <div class="status" data-status="strategy-backtest-export"></div>
+            <div class="result" data-result="strategy-backtest-export"></div>
+          </div>
         </div>
-        <div class="card">
-          <h3>Shioaji AI 協作中心</h3>
-          <p>同步官方 llms 文件並生成 AI 協作中心頁面。</p>
-          <label class="checkbox">
-            <input type="checkbox" id="ai-force" />
-            強制重新同步文件
-          </label>
-          <button class="action-btn ghost" data-action="ai-assistant">產生 AI 協作中心</button>
-          <div class="progress"><span data-progress="ai-assistant"></span></div>
-          <div class="status" data-status="ai-assistant"></div>
+
+        <div class="panel">
+          <h3>回測結果</h3>
+          <p>保留 raw JSON 的同時，提供績效卡片、權益曲線與近端訊號/交易明細。</p>
+
+          <div id="strategy-metrics" class="metrics-grid"></div>
+
+          <div class="chart-wrap">
+            <canvas id="equity-chart" width="1200" height="260"></canvas>
+          </div>
+
+          <div class="panel" style="margin-top:10px; padding:10px;">
+            <h3>策略摘要</h3>
+            <div id="strategy-summary" class="result-empty">尚未執行回測</div>
+          </div>
+
+          <div class="panel" style="margin-top:10px; padding:10px;">
+            <h3>近期訊號</h3>
+            <div class="table-wrap" id="signal-table-wrap"></div>
+          </div>
+
+          <div class="panel" style="margin-top:10px; padding:10px;">
+            <h3>交易明細</h3>
+            <div class="table-wrap" id="trade-table-wrap"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -80,18 +156,13 @@
     <section class="section">
       <h2 class="section-title">Shioaji 交易測試中心</h2>
       <div class="inline-controls">
-        <label class="checkbox">
-          <input type="checkbox" id="trade-sim" checked />
-          使用模擬環境（simulation=True）
-        </label>
-        <label class="checkbox">
-          <input type="checkbox" id="allow-live-order" />
-          允許正式環境下單測試
-        </label>
+        <label class="checkbox-line"><input type="checkbox" id="trade-sim" checked />使用模擬環境（simulation=True）</label>
+        <label class="checkbox-line"><input type="checkbox" id="allow-live-order" />允許正式環境下單測試</label>
         <button class="ghost-btn" id="refresh-shioaji-env">更新環境檢查</button>
       </div>
       <div class="diagnose-tip" id="shioaji-env-tip">讀取 Shioaji 環境中…</div>
-      <div class="form-grid trade-config-grid">
+
+      <div class="form-grid three" style="margin-top:10px;">
         <label>證券代號
           <input type="text" id="trade-stock-code" value="2890" />
         </label>
@@ -99,7 +170,7 @@
           <input type="number" id="trade-stock-qty" value="1" min="1" max="10" />
         </label>
         <label>證券測試價格（選填）
-          <input type="number" id="trade-stock-price" placeholder="留白採用參考價" min="1" step="0.01" />
+          <input type="number" id="trade-stock-price" min="1" step="0.01" />
         </label>
         <label>期貨商品代號
           <input type="text" id="trade-futures-code" value="TXFC0" />
@@ -108,17 +179,17 @@
           <input type="number" id="trade-futures-qty" value="1" min="1" max="10" />
         </label>
         <label>期貨測試價格（選填）
-          <input type="number" id="trade-futures-price" placeholder="留白採用參考價" min="1" step="0.01" />
+          <input type="number" id="trade-futures-price" min="1" step="0.01" />
         </label>
         <label>證券/期貨最小間隔（秒）
           <input type="number" id="trade-interval" value="1.1" min="1" max="5" step="0.1" />
         </label>
       </div>
 
-      <div class="grid grid-2">
+      <div class="grid-2" style="margin-top:10px;">
         <div class="card">
           <h3>模擬流程測試</h3>
-          <p>可分別驗證登入、證券下單、期貨下單；也可一鍵跑完整模擬流程。</p>
+          <p>可分別驗證登入、證券下單、期貨下單，或一鍵跑完整模擬流程。</p>
 
           <div class="action-row">
             <button class="action-btn" data-action="shioaji-login-test">登入測試</button>
@@ -151,7 +222,7 @@
 
         <div class="card">
           <h3>正式環境切換</h3>
-          <p>檢查 token 正式權限、帳戶 signed 狀態、CA 設定是否符合切換條件。</p>
+          <p>檢查 token 權限、signed 狀態與 CA 設定是否符合正式環境切換條件。</p>
           <div class="diagnose-tip" id="switch-tip">尚未檢核</div>
 
           <div class="action-row">
@@ -162,11 +233,11 @@
           </div>
 
           <div class="card-hint">
-            <strong>切換說明：</strong>
-            <div>1. 先在模擬環境完成登入/證券/期貨測試。</div>
-            <div>2. 若顯示「未開通正式權限」，請到永豐 API 管理頁開通並重發 key。</div>
-            <div>3. 官方審核後，用本頁「檢核正式環境」確認 signed=True。</div>
-            <div>4. 切換到正式環境後，若要下單請另外勾選「允許正式環境下單測試」。</div>
+            <strong>切換建議流程：</strong><br>
+            1) 先完成模擬登入/證券/期貨測試。<br>
+            2) 若顯示正式權限不足，先到永豐 API 管理頁開通。<br>
+            3) 開通後重新檢核，確認 signed=True 與 CA 已配置。<br>
+            4) 正式下單前先以最小單位做 smoke test。
           </div>
         </div>
       </div>
@@ -175,13 +246,9 @@
     <section class="section">
       <h2 class="section-title">帳戶資訊</h2>
       <div class="inline-controls">
-        <label class="checkbox">
-          <input type="checkbox" id="account-sim" />
-          使用模擬帳戶
-        </label>
-        <span class="inline-note">正式帳戶會讀取真實資金資訊</span>
+        <label class="checkbox-line"><input type="checkbox" id="account-sim" />使用模擬帳戶</label>
       </div>
-      <div class="grid grid-2">
+      <div class="grid-2">
         <div class="card">
           <h3>交割帳戶餘額</h3>
           <p>查詢股票帳戶可用餘額。</p>
@@ -190,14 +257,16 @@
           <div class="status" data-status="account-balance"></div>
           <div class="result" data-result="account-balance"></div>
         </div>
+
         <div class="card">
           <h3>可用買進額度</h3>
-          <p>查詢可用買進資金（若 API 不支援會回傳餘額資訊）。</p>
+          <p>查詢可用買進資金。</p>
           <button class="action-btn secondary" data-action="account-funds">查詢可用額度</button>
           <div class="progress"><span data-progress="account-funds"></span></div>
           <div class="status" data-status="account-funds"></div>
           <div class="result" data-result="account-funds"></div>
         </div>
+
         <div class="card">
           <h3>交割明細</h3>
           <p>查詢 T / T+1 / T+2 交割資訊。</p>
@@ -206,6 +275,7 @@
           <div class="status" data-status="settlements"></div>
           <div class="result" data-result="settlements"></div>
         </div>
+
         <div class="card">
           <h3>持倉明細</h3>
           <p>查詢目前股票持倉明細。</p>
@@ -214,6 +284,7 @@
           <div class="status" data-status="positions"></div>
           <div class="result" data-result="positions"></div>
         </div>
+
         <div class="card">
           <h3>一鍵帳戶診斷</h3>
           <p>一次檢查環境、登入、帳戶、餘額、持倉與交割。</p>
@@ -224,20 +295,64 @@
           <div class="result" data-result="account-diagnose"></div>
         </div>
       </div>
-      <div class="card">
-        <h3>注意事項</h3>
-        <ul class="list">
-          <li>需先設定 .env 的 APIKEY / SECRET</li>
-          <li>正式下單一定要有 CA 設定，並確認帳戶風險控管</li>
-          <li>正式環境預設不允許下單測試，避免誤下真單</li>
-        </ul>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">快速動作</h2>
+      <div class="grid-3">
+        <div class="card">
+          <h3>短期投資 Dashboard</h3>
+          <p>重新計算短期排名，產生 Top20 HTML 與 CSV。</p>
+          <div class="form-grid three">
+            <label>Top N
+              <input type="number" id="short-top" value="20" min="5" max="200" />
+            </label>
+            <label>流動性預篩
+              <input type="number" id="short-preselect" value="300" min="50" max="1000" />
+            </label>
+            <label>回溯天數
+              <input type="number" id="short-lookback" value="90" min="30" max="365" />
+            </label>
+          </div>
+          <button class="action-btn" data-action="short-term">產生短期 Dashboard</button>
+          <div class="progress"><span data-progress="short-term"></span></div>
+          <div class="status" data-status="short-term"></div>
+        </div>
+
+        <div class="card">
+          <h3>波段分析報表</h3>
+          <p>執行波段分析策略，產出 HTML 互動報表。</p>
+          <div class="form-grid three">
+            <label>開始日期
+              <input type="date" id="swing-start" />
+            </label>
+            <label>結束日期
+              <input type="date" id="swing-end" />
+            </label>
+            <label>回溯天數
+              <input type="number" id="swing-lookback" value="365" min="60" max="730" />
+            </label>
+          </div>
+          <button class="action-btn secondary" data-action="swing-report">產生波段報表</button>
+          <div class="progress"><span data-progress="swing-report"></span></div>
+          <div class="status" data-status="swing-report"></div>
+        </div>
+
+        <div class="card">
+          <h3>Shioaji AI 協作中心</h3>
+          <p>同步官方 llms 文件並生成 AI 協作中心頁面。</p>
+          <label class="checkbox-line"><input type="checkbox" id="ai-force" />強制重新同步文件</label>
+          <button class="action-btn ghost" data-action="ai-assistant">產生 AI 協作中心</button>
+          <div class="progress"><span data-progress="ai-assistant"></span></div>
+          <div class="status" data-status="ai-assistant"></div>
+        </div>
       </div>
     </section>
 
     <section class="section">
       <h2 class="section-title">執行紀錄</h2>
       <div class="inline-controls">
-        <span class="inline-note">後端心跳：<span id="heartbeat">--</span></span>
+        <span>後端心跳：<span id="heartbeat">--</span></span>
         <button class="ghost-btn" id="refresh-log">更新後端 Log</button>
         <button class="ghost-btn" id="post-test">測試 POST</button>
       </div>
@@ -252,7 +367,7 @@
       </div>
     </section>
 
-    <div class="footer">Generated by quant-trade · 控制台模式</div>
+    <div class="footer">Generated by quant-trade · control panel mode</div>
   </div>
 
   <script>
@@ -261,7 +376,10 @@
     const reportList = document.getElementById('report-list');
     const heartbeatEl = document.getElementById('heartbeat');
     const pollers = {};
+
     const ACTION_LABELS = {
+      'strategy-backtest': '多策略回測',
+      'strategy-backtest-export': '多策略回測匯出',
       'short-term': '短期 Dashboard',
       'swing-report': '波段報表',
       'ai-assistant': 'AI 協作中心',
@@ -276,6 +394,7 @@
       'shioaji-simulation-suite': '模擬整套測試',
       'shioaji-verify-production': '正式環境檢核'
     };
+
     const STATE_LABELS = {
       idle: '待命',
       running: '執行中',
@@ -292,10 +411,321 @@
       logEl.textContent = `[${timestamp}] ${message}\n` + logEl.textContent;
     }
 
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/[&<>\"]/g, (char) => {
+          if (char === '&') return '&amp;';
+          if (char === '<') return '&lt;';
+          if (char === '>') return '&gt;';
+          return '&quot;';
+        })
+        .replace(/'/g, '&#39;');
+    }
+
     function toNumber(value, fallback = null) {
       const parsed = Number(value);
-      if (Number.isNaN(parsed) || value === '') return fallback;
+      if (value === '' || Number.isNaN(parsed)) return fallback;
       return parsed;
+    }
+
+    function formatNumber(value, digits = 2) {
+      if (typeof value !== 'number' || Number.isNaN(value)) return '-';
+      return value.toLocaleString('zh-TW', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+    }
+
+    function formatPct(value, digits = 2) {
+      if (typeof value !== 'number' || Number.isNaN(value)) return '-';
+      return `${(value * 100).toFixed(digits)}%`;
+    }
+
+    function formatCurrency(value) {
+      if (typeof value !== 'number' || Number.isNaN(value)) return '-';
+      return `NT$ ${value.toLocaleString('zh-TW', { maximumFractionDigits: 0 })}`;
+    }
+
+    function boolLabel(value) {
+      if (value === true) return '是';
+      if (value === false) return '否';
+      return '未知';
+    }
+
+    function resultStateMeta(result) {
+      if (!result || typeof result !== 'object') return { text: '無結果', css: 'neutral' };
+      if (result.passed === true) return { text: '通過', css: 'ok' };
+      if (result.passed === false) return { text: '未通過', css: 'warn' };
+      if (result.error) return { text: '異常', css: 'warn' };
+      return { text: '完成', css: 'neutral' };
+    }
+
+    function buildResultHighlights(action, result) {
+      const rows = [];
+      if (!result || typeof result !== 'object') return rows;
+      const backtestResult = action === 'strategy-backtest-export'
+        ? (result.backtest || {})
+        : result;
+
+      if (result.mode) rows.push(['模式', result.mode]);
+      else if (typeof result.simulation === 'boolean') rows.push(['模式', result.simulation ? '模擬帳戶' : '正式帳戶']);
+
+      if (['strategy-backtest', 'strategy-backtest-export'].includes(action) && backtestResult.metrics) {
+        const m = backtestResult.metrics;
+        rows.push(['總報酬', formatPct(m.total_return)]);
+        rows.push(['最大回撤', formatPct(m.max_drawdown)]);
+        rows.push(['Sharpe', formatNumber(m.sharpe, 3)]);
+        rows.push(['CAGR', formatPct(m.cagr)]);
+        rows.push(['勝率', formatPct(m.win_rate)]);
+        rows.push(['交易筆數', String(m.trade_count ?? '-')]);
+      }
+      if (action === 'strategy-backtest-export' && result.export?.files) {
+        rows.push(['匯出檔案', String(Object.keys(result.export.files).length)]);
+      }
+
+      if (typeof result.acc_balance === 'number') rows.push(['餘額', formatCurrency(result.acc_balance)]);
+      if (typeof result.available_amount === 'number') rows.push(['可用額度', formatCurrency(result.available_amount)]);
+      if (result.summary && ['settlements', 'positions'].includes(action)) rows.push(['摘要', result.summary]);
+
+      if (action === 'account-diagnose') {
+        if (result.shioaji_version) rows.push(['版本', result.shioaji_version]);
+        if (typeof result.production_permission === 'boolean') rows.push(['正式權限', boolLabel(result.production_permission)]);
+        if (typeof result.ca_activated === 'boolean') rows.push(['CA 已啟用', boolLabel(result.ca_activated)]);
+      }
+
+      if (action === 'shioaji-verify-production') {
+        if (typeof result.production_permission === 'boolean') rows.push(['正式權限', boolLabel(result.production_permission)]);
+        if (typeof result.signed_count === 'number') rows.push(['signed 數量', String(result.signed_count)]);
+        if (typeof result.ca_configured === 'boolean') rows.push(['CA 已設定', boolLabel(result.ca_configured)]);
+      }
+
+      return rows;
+    }
+
+    function buildResultList(title, items) {
+      if (!Array.isArray(items) || items.length === 0) return '';
+      const html = items.map(item => `<li>${escapeHtml(item)}</li>`).join('');
+      return `<div class="result-title">${escapeHtml(title)}</div><ul class="result-list">${html}</ul>`;
+    }
+
+    function buildExportLinks(action, result) {
+      if (action !== 'strategy-backtest-export') return '';
+      const urls = result?.export?.urls;
+      if (!urls || typeof urls !== 'object') return '';
+      const entries = Object.entries(urls).filter(([, url]) => typeof url === 'string' && url.length > 0);
+      if (entries.length === 0) return '';
+      const html = entries
+        .map(([label, url]) => `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a></li>`)
+        .join('');
+      return `<div class="result-title">匯出檔案</div><ul class="result-list">${html}</ul>`;
+    }
+
+    function renderResult(action, result) {
+      if (!result || typeof result !== 'object') {
+        return '<div class="result-empty">尚無結果</div>';
+      }
+
+      const meta = resultStateMeta(result);
+      const title = actionLabel(action);
+      const message = result.message ? `<p class="result-message">${escapeHtml(result.message)}</p>` : '';
+      const highlights = buildResultHighlights(action, result);
+      const kvHtml = highlights.length > 0
+        ? `<div class="result-kv-grid">${highlights.map(([label, value]) => (
+            `<div class="result-kv"><div class="result-kv-label">${escapeHtml(label)}</div><div class="result-kv-value">${escapeHtml(value)}</div></div>`
+          )).join('')}</div>`
+        : '';
+      const nextStepsHtml = buildResultList('建議下一步', result.next_steps);
+      const exportLinksHtml = buildExportLinks(action, result);
+      const rawJson = escapeHtml(JSON.stringify(result, null, 2));
+      const rawJsonHtml = `<details class="result-json"><summary>查看原始 JSON</summary><pre>${rawJson}</pre></details>`;
+
+      return `
+        <div class="result-head">
+          <div class="result-title">${escapeHtml(title)}</div>
+          <div class="result-chip ${meta.css}">${escapeHtml(meta.text)}</div>
+        </div>
+        ${message}
+        ${kvHtml}
+        ${nextStepsHtml}
+        ${exportLinksHtml}
+        ${rawJsonHtml}
+      `;
+    }
+
+    function renderTable(containerId, rows, preferredColumns) {
+      const wrap = document.getElementById(containerId);
+      if (!wrap) return;
+      if (!Array.isArray(rows) || rows.length === 0) {
+        wrap.innerHTML = '<div class="result-empty" style="padding:10px;">無資料</div>';
+        return;
+      }
+
+      const columns = preferredColumns && preferredColumns.length > 0
+        ? preferredColumns.filter(col => rows.some(row => row[col] !== undefined))
+        : Object.keys(rows[0]);
+
+      const head = columns.map(col => `<th>${escapeHtml(col)}</th>`).join('');
+      const body = rows.map(row => (
+        `<tr>${columns.map(col => `<td>${escapeHtml(row[col] ?? '')}</td>`).join('')}</tr>`
+      )).join('');
+
+      wrap.innerHTML = `
+        <table class="data-table">
+          <thead><tr>${head}</tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      `;
+    }
+
+    function drawEquityChart(points) {
+      const canvas = document.getElementById('equity-chart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+      const pad = 28;
+
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+
+      if (!Array.isArray(points) || points.length < 2) {
+        ctx.fillStyle = '#6c7f9d';
+        ctx.font = '14px "Noto Sans TC"';
+        ctx.fillText('尚無足夠權益曲線資料', 28, 48);
+        return;
+      }
+
+      const values = points.map(item => Number(item.equity)).filter(v => Number.isFinite(v));
+      if (values.length < 2) {
+        ctx.fillStyle = '#6c7f9d';
+        ctx.font = '14px "Noto Sans TC"';
+        ctx.fillText('尚無足夠權益曲線資料', 28, 48);
+        return;
+      }
+
+      const minVal = Math.min(...values);
+      const maxVal = Math.max(...values);
+      const span = Math.max(maxVal - minVal, 1);
+
+      ctx.strokeStyle = '#d4dff4';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const y = pad + ((height - pad * 2) * i) / 3;
+        ctx.beginPath();
+        ctx.moveTo(pad, y);
+        ctx.lineTo(width - pad, y);
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = '#1d6ef2';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      values.forEach((value, idx) => {
+        const x = pad + ((width - pad * 2) * idx) / (values.length - 1);
+        const y = height - pad - ((value - minVal) / span) * (height - pad * 2);
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      ctx.fillStyle = '#304b7b';
+      ctx.font = '12px "JetBrains Mono"';
+      ctx.fillText(`Max ${formatNumber(maxVal, 0)}`, pad, 16);
+      ctx.fillText(`Min ${formatNumber(minVal, 0)}`, pad, height - 8);
+    }
+
+    function renderStrategyMetrics(result) {
+      const container = document.getElementById('strategy-metrics');
+      if (!container) return;
+      const metrics = result?.metrics || {};
+      const cards = [
+        ['總報酬', formatPct(metrics.total_return), metrics.total_return >= 0 ? 'positive' : 'negative'],
+        ['最大回撤', formatPct(metrics.max_drawdown), 'negative'],
+        ['Sharpe', formatNumber(metrics.sharpe, 3), ''],
+        ['CAGR', formatPct(metrics.cagr), metrics.cagr >= 0 ? 'positive' : 'negative'],
+        ['勝率', formatPct(metrics.win_rate), metrics.win_rate >= 0.5 ? 'positive' : ''],
+        ['交易筆數', String(metrics.trade_count ?? '-'), '']
+      ];
+
+      container.innerHTML = cards.map(([label, value, cls]) => `
+        <div class="metric-card ${cls}">
+          <div class="label">${escapeHtml(label)}</div>
+          <div class="value">${escapeHtml(value)}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderStrategySummary(result) {
+      const summaryEl = document.getElementById('strategy-summary');
+      if (!summaryEl) return;
+      const summary = result?.strategy_summary;
+      if (!summary || typeof summary !== 'object' || Object.keys(summary).length === 0) {
+        summaryEl.textContent = '尚無摘要';
+        return;
+      }
+      const lines = Object.entries(summary).map(([k, v]) => `${k}: ${v}`);
+      summaryEl.textContent = lines.join(' | ');
+    }
+
+    function renderStrategyWorkbench(result) {
+      renderStrategyMetrics(result);
+      renderStrategySummary(result);
+      drawEquityChart(result?.equity_curve || []);
+      renderTable('signal-table-wrap', result?.recent_signals || [], [
+        'date', 'Close', 'ensemble_score', 'entry_signal', 'active_strategies',
+        'momentum_trend_signal', 'mean_reversion_signal', 'chip_flow_signal'
+      ]);
+      renderTable('trade-table-wrap', result?.trade_log || [], [
+        'date', 'side', 'price', 'quantity', 'pnl', 'pnl_pct', 'holding_days', 'reason', 'active_strategies'
+      ]);
+    }
+
+    function updateResult(action, result) {
+      const resultEl = document.querySelector(`[data-result="${action}"]`);
+      if (resultEl) resultEl.innerHTML = renderResult(action, result);
+
+      if (action === 'strategy-backtest') {
+        renderStrategyWorkbench(result);
+      }
+      if (action === 'strategy-backtest-export') {
+        renderStrategyWorkbench(result?.backtest || {});
+      }
+
+      if (action === 'account-diagnose') {
+        const tipEl = document.getElementById('diagnose-tip');
+        if (!tipEl || !result) return;
+        const prod = result.production_permission;
+        if (prod === true) {
+          tipEl.textContent = '正式盤權限：已開通，可切換正式帳戶查詢';
+          tipEl.className = 'diagnose-tip ok';
+        } else if (prod === false) {
+          tipEl.textContent = '正式盤權限：未開通，先使用模擬模式或申請開通';
+          tipEl.className = 'diagnose-tip warn';
+        } else {
+          tipEl.textContent = '正式盤權限：未知，請先執行正式環境檢核';
+          tipEl.className = 'diagnose-tip';
+        }
+      }
+
+      if (action === 'shioaji-verify-production') {
+        const switchTip = document.getElementById('switch-tip');
+        if (!switchTip || !result) return;
+        if (result.passed === true) {
+          switchTip.textContent = '正式環境可切換（條件通過）';
+          switchTip.className = 'diagnose-tip ok';
+        } else if (result.passed === false) {
+          const firstStep = Array.isArray(result.next_steps) && result.next_steps.length > 0
+            ? result.next_steps[0]
+            : '請查看結果中的 next_steps';
+          switchTip.textContent = `正式環境尚不可切換：${firstStep}`;
+          switchTip.className = 'diagnose-tip warn';
+        }
+      }
+    }
+
+    function updateProgress(action, progress) {
+      const bar = document.querySelector(`[data-progress="${action}"]`);
+      if (!bar) return;
+      bar.style.width = `${progress}%`;
+      bar.textContent = progress >= 15 ? `${progress}%` : '';
     }
 
     function getTradeParams() {
@@ -312,11 +742,77 @@
       };
     }
 
+    function getStrategyParams() {
+      return {
+        symbol: document.getElementById('strategy-symbol').value || '2330.TW',
+        market: document.getElementById('strategy-market').value || 'TW',
+        start_date: document.getElementById('strategy-start').value || null,
+        end_date: document.getElementById('strategy-end').value || null,
+        enabled: {
+          momentum_trend: document.getElementById('stg-a-enabled').checked,
+          mean_reversion: document.getElementById('stg-b-enabled').checked,
+          chip_flow: document.getElementById('stg-c-enabled').checked,
+        },
+        weights: {
+          momentum_trend: toNumber(document.getElementById('stg-a-weight').value, 0.4),
+          mean_reversion: toNumber(document.getElementById('stg-b-weight').value, 0.3),
+          chip_flow: toNumber(document.getElementById('stg-c-weight').value, 0.3),
+        },
+        threshold: toNumber(document.getElementById('strategy-threshold').value, 0.6),
+        strategy_params: {},
+        risk_config: {
+          stop_loss_pct: toNumber(document.getElementById('risk-stop-loss').value, 0.05),
+          atr_multiplier: toNumber(document.getElementById('risk-atr-mult').value, 2),
+          trail_activate_return: toNumber(document.getElementById('risk-trail-activate').value, 0.10),
+          trail_drawdown_pct: toNumber(document.getElementById('risk-trail-drawdown').value, 0.03),
+          max_holding_days: toNumber(document.getElementById('risk-max-holding').value, 10),
+          min_return_for_hold: toNumber(document.getElementById('risk-min-return').value, 0.02)
+        },
+        backtest_config: {
+          INITIAL_CAPITAL: toNumber(document.getElementById('bt-capital').value, 1000000),
+          COMMISSION_RATE: toNumber(document.getElementById('bt-commission').value, 0.001425),
+          TAX_RATE: toNumber(document.getElementById('bt-tax').value, 0.003),
+          SLIPPAGE: toNumber(document.getElementById('bt-slippage').value, 0.001),
+          RISK_FRACTION: toNumber(document.getElementById('risk-fraction').value, 0.01),
+        }
+      };
+    }
+
+    function getParams(action) {
+      if (action === 'strategy-backtest' || action === 'strategy-backtest-export') {
+        return getStrategyParams();
+      }
+      if (action === 'short-term') {
+        return {
+          top_n: Number(document.getElementById('short-top').value || 20),
+          preselect_n: Number(document.getElementById('short-preselect').value || 300),
+          lookback_days: Number(document.getElementById('short-lookback').value || 90)
+        };
+      }
+      if (action === 'swing-report') {
+        return {
+          start_date: document.getElementById('swing-start').value || null,
+          end_date: document.getElementById('swing-end').value || null,
+          lookback_days: Number(document.getElementById('swing-lookback').value || 365)
+        };
+      }
+      if (action === 'ai-assistant') {
+        return { force: document.getElementById('ai-force').checked };
+      }
+      if (['account-balance', 'account-funds', 'settlements', 'positions', 'account-diagnose'].includes(action)) {
+        return { simulation: document.getElementById('account-sim').checked };
+      }
+      if (['shioaji-login-test', 'shioaji-stock-test', 'shioaji-futures-test', 'shioaji-simulation-suite', 'shioaji-verify-production'].includes(action)) {
+        return getTradeParams();
+      }
+      return {};
+    }
+
     async function refreshReports() {
       const res = await fetch('/api/reports');
       const data = await res.json();
       reportList.innerHTML = '';
-      data.reports.forEach(item => {
+      (data.reports || []).forEach(item => {
         const li = document.createElement('li');
         li.className = 'report-item';
         const link = document.createElement('a');
@@ -387,91 +883,17 @@
       }
     }
 
-    function getParams(action) {
-      if (action === 'short-term') {
-        return {
-          top_n: Number(document.getElementById('short-top').value || 20),
-          preselect_n: Number(document.getElementById('short-preselect').value || 300),
-          lookback_days: Number(document.getElementById('short-lookback').value || 90)
-        };
-      }
-      if (action === 'swing-report') {
-        const start = document.getElementById('swing-start').value || null;
-        const end = document.getElementById('swing-end').value || null;
-        return {
-          start_date: start,
-          end_date: end,
-          lookback_days: Number(document.getElementById('swing-lookback').value || 365)
-        };
-      }
-      if (action === 'ai-assistant') {
-        return {
-          force: document.getElementById('ai-force').checked
-        };
-      }
-      if (['account-balance', 'account-funds', 'settlements', 'positions', 'account-diagnose'].includes(action)) {
-        return {
-          simulation: document.getElementById('account-sim').checked
-        };
-      }
-      if (['shioaji-login-test', 'shioaji-stock-test', 'shioaji-futures-test', 'shioaji-simulation-suite', 'shioaji-verify-production'].includes(action)) {
-        return getTradeParams();
-      }
-      return {};
-    }
-
-    function updateProgress(action, progress) {
-      const bar = document.querySelector(`[data-progress="${action}"]`);
-      if (!bar) return;
-      bar.style.width = `${progress}%`;
-      bar.textContent = progress >= 15 ? `${progress}%` : '';
-    }
-
-    function updateResult(action, result) {
-      const resultEl = document.querySelector(`[data-result="${action}"]`);
-      if (resultEl) {
-        if (!result) {
-          resultEl.textContent = '';
-        } else {
-          const summary = [];
-          if (result.message) summary.push(`摘要：${result.message}`);
-          if (Array.isArray(result.next_steps) && result.next_steps.length > 0) {
-            summary.push(`建議下一步：${result.next_steps[0]}`);
-          }
-          const summaryText = summary.length > 0 ? `${summary.join('\n')}\n\n` : '';
-          resultEl.textContent = `${summaryText}${JSON.stringify(result, null, 2)}`;
-        }
-      }
-
-      if (action === 'account-diagnose') {
-        const tipEl = document.getElementById('diagnose-tip');
-        if (!tipEl || !result) return;
-        const prod = result.production_permission;
-        if (prod === true) {
-          tipEl.textContent = '正式盤權限：已開通，可切換正式帳戶查詢';
-          tipEl.className = 'diagnose-tip ok';
-        } else if (prod === false) {
-          tipEl.textContent = '正式盤權限：未開通，先使用模擬模式或申請開通';
-          tipEl.className = 'diagnose-tip warn';
-        } else {
-          tipEl.textContent = '正式盤權限：未知，請先執行正式環境檢核';
-          tipEl.className = 'diagnose-tip';
-        }
-      }
-
-      if (action === 'shioaji-verify-production') {
-        const switchTip = document.getElementById('switch-tip');
-        if (!switchTip || !result) return;
-        if (result.passed === true) {
-          switchTip.textContent = '正式環境可切換（條件通過）';
-          switchTip.className = 'diagnose-tip ok';
-        } else if (result.passed === false) {
-          const firstStep = Array.isArray(result.next_steps) && result.next_steps.length > 0
-            ? result.next_steps[0]
-            : '請查看結果中的 next_steps';
-          switchTip.textContent = `正式環境尚不可切換：${firstStep}`;
-          switchTip.className = 'diagnose-tip warn';
-        }
+    async function loadStrategyDefaults() {
+      try {
+        const res = await fetch('/api/strategy/default');
+        const payload = await res.json();
+        const data = payload.data || {};
+        if (data.symbol) document.getElementById('strategy-symbol').value = data.symbol;
+        if (data.market) document.getElementById('strategy-market').value = data.market;
+        if (data.start_date) document.getElementById('strategy-start').value = data.start_date;
+        if (data.end_date) document.getElementById('strategy-end').value = data.end_date;
+      } catch (err) {
+        appendLog('讀取策略預設值失敗，使用頁面預設設定');
       }
     }
 
@@ -486,7 +908,7 @@
         statusEl.textContent = `${data.message}（${stateText}）${elapsed}`;
       }
       updateProgress(action, data.progress || 0);
-      updateResult(action, data.result || null);
+      if (data.result) updateResult(action, data.result);
       if (Array.isArray(data.log) && data.log.length > 0) {
         appendLog(`${actionLabel(action)}：${data.log[0]}`);
       }
@@ -503,6 +925,8 @@
       if (statusEl) statusEl.textContent = '送出請求中…';
       appendLog(`開始執行 ${label}...`);
       try {
+        const resultEl = document.querySelector(`[data-result="${action}"]`);
+        if (resultEl) resultEl.innerHTML = '<div class="result-empty">執行中，等待結果…</div>';
         const res = await fetch(`/api/run/${action}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -547,10 +971,12 @@
       }
     });
 
+    renderStrategyWorkbench({});
     refreshReports();
     refreshHeartbeat();
     refreshServerLog();
     refreshShioajiEnv();
+    loadStrategyDefaults();
     setInterval(refreshHeartbeat, 5000);
   </script>
 </body>

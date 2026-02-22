@@ -45,7 +45,7 @@ def main() -> None:
     except Exception as exc:  # noqa: BLE001
         raise SystemExit("找不到 uvicorn，請先安裝 requirements：{exc}")
 
-    reload_dirs = args.reload_dirs or ["web", "tools", "analysis"]
+    reload_dirs = args.reload_dirs or ["web", "tools", "analysis", "strategies", "backtest", "data"]
     uvicorn.run(
         "web.control_panel_app:app",
         host=args.host,

@@ -276,7 +276,7 @@ class ShioajiWorkflowService:
             account = self.gateway.pick_stock_account(api, context.accounts)
             if account is None:
                 raise ShioajiGatewayError("找不到股票帳戶 (stock_account)")
-            balance = self.gateway.call_with_timeout(api.account_balance, 15, account=account)
+            balance = self._call_account_api(api.account_balance, account, timeout_sec=15, allow_no_account=True)
             amount = getattr(balance, "acc_balance", None)
             return {
                 "mode": _mode_text(simulation),
@@ -294,13 +294,16 @@ class ShioajiWorkflowService:
             funds_data = None
             if hasattr(api, "get_stock_account_funds"):
                 try:
-                    funds_data = self.gateway.call_with_timeout(api.get_stock_account_funds, 15, account=account)
-                except TypeError:
-                    funds_data = self.gateway.call_with_timeout(api.get_stock_account_funds, 15)
+                    funds_data = self._call_account_api(
+                        api.get_stock_account_funds,
+                        account,
+                        timeout_sec=15,
+                        allow_no_account=True,
+                    )
                 except Exception:
                     funds_data = None
             if funds_data is None:
-                funds_data = self.gateway.call_with_timeout(api.account_balance, 15, account=account)
+                funds_data = self._call_account_api(api.account_balance, account, timeout_sec=15, allow_no_account=True)
             data = self.gateway.as_dict(funds_data)
             amount, key = self._pick_amount(data)
             return {
@@ -319,9 +322,14 @@ class ShioajiWorkflowService:
                 raise ShioajiGatewayError("找不到股票帳戶 (stock_account)")
             settlements = None
             if hasattr(api, "settlements"):
-                settlements = self.gateway.call_with_timeout(api.settlements, 15, account=account)
+                settlements = self._call_account_api(api.settlements, account, timeout_sec=15, allow_no_account=True)
             if settlements is None and hasattr(api, "list_settlements"):
-                settlements = self.gateway.call_with_timeout(api.list_settlements, 15, account=account)
+                settlements = self._call_account_api(
+                    api.list_settlements,
+                    account,
+                    timeout_sec=15,
+                    allow_no_account=True,
+                )
             summary = self._format_settlements(settlements)
             return {
                 "mode": _mode_text(simulation),
@@ -336,7 +344,7 @@ class ShioajiWorkflowService:
             account = self.gateway.pick_stock_account(api, context.accounts)
             if account is None:
                 raise ShioajiGatewayError("找不到股票帳戶 (stock_account)")
-            positions = self.gateway.call_with_timeout(api.list_positions, 15, account=account)
+            positions = self._call_account_api(api.list_positions, account, timeout_sec=15, allow_no_account=True)
             summary, detail = self._format_positions(positions)
             return {
                 "mode": _mode_text(simulation),
@@ -359,17 +367,27 @@ class ShioajiWorkflowService:
             if account is None:
                 raise ShioajiGatewayError("找不到股票帳戶 (stock_account)")
 
-            balance = self.gateway.call_with_timeout(api.account_balance, 15, account=account)
+            balance = self._call_account_api(api.account_balance, account, timeout_sec=15, allow_no_account=True)
             try:
-                funds = self.gateway.call_with_timeout(api.get_stock_account_funds, 15, account=account)
+                funds = self._call_account_api(
+                    api.get_stock_account_funds,
+                    account,
+                    timeout_sec=15,
+                    allow_no_account=True,
+                )
             except Exception:
                 funds = balance
-            positions = self.gateway.call_with_timeout(api.list_positions, 15, account=account)
+            positions = self._call_account_api(api.list_positions, account, timeout_sec=15, allow_no_account=True)
             settlements = None
             if hasattr(api, "settlements"):
-                settlements = self.gateway.call_with_timeout(api.settlements, 15, account=account)
+                settlements = self._call_account_api(api.settlements, account, timeout_sec=15, allow_no_account=True)
             if settlements is None and hasattr(api, "list_settlements"):
-                settlements = self.gateway.call_with_timeout(api.list_settlements, 15, account=account)
+                settlements = self._call_account_api(
+                    api.list_settlements,
+                    account,
+                    timeout_sec=15,
+                    allow_no_account=True,
+                )
 
             return {
                 "mode": _mode_text(simulation),
@@ -449,11 +467,33 @@ class ShioajiWorkflowService:
 
     def _update_order_status(self, api, account) -> None:
         try:
-            self.gateway.call_with_timeout(api.update_status, 12, account=account)
-        except TypeError:
-            self.gateway.call_with_timeout(api.update_status, 12, account)
+            self._call_account_api(api.update_status, account, timeout_sec=12, allow_no_account=True)
         except Exception:
             return
+
+    def _call_account_api(self, method, account, *, timeout_sec: int = 15, allow_no_account: bool = False):
+        attempts = [
+            {"args": (), "kwargs": {"account": account}},
+            {"args": (account,), "kwargs": {}},
+        ]
+        if allow_no_account:
+            attempts.append({"args": (), "kwargs": {}})
+
+        last_type_error = None
+        for attempt in attempts:
+            try:
+                return self.gateway.call_with_timeout(
+                    method,
+                    timeout_sec,
+                    *attempt["args"],
+                    **attempt["kwargs"],
+                )
+            except TypeError as exc:
+                last_type_error = exc
+                continue
+        if last_type_error is not None:
+            raise last_type_error
+        raise RuntimeError("account api call failed")
 
     @staticmethod
     def _pick_amount(data: Dict[str, Any]):

@@ -5,7 +5,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -17,7 +17,12 @@ from analysis.short_term_ranker import run_short_term_ranking
 from dashboard_generator import generate_dashboard
 from swing_analysis import generate_swing_report
 from tools.shioaji_ai_sync import sync_ai_docs
-from web.services import ShioajiGateway, ShioajiWorkflowService
+from web.services import (
+    ShioajiGateway,
+    ShioajiWorkflowService,
+    StrategyRunConfig,
+    StrategyWorkflowService,
+)
 from web.services.shioaji_workflow import OrderTestConfig
 
 CONTROL_PANEL_HTML = Path("web/control_panel.html")
@@ -87,6 +92,31 @@ class ShioajiTestRequest(BaseModel):
     interval_sec: float = Field(default=1.1, ge=1.0, le=5.0)
 
 
+class StrategyBacktestRequest(BaseModel):
+    symbol: str = Field(default="2330.TW", min_length=2, max_length=24)
+    market: str = Field(default="TW", min_length=2, max_length=8)
+    start_date: str | None = None
+    end_date: str | None = None
+    enabled: Dict[str, bool] = Field(
+        default_factory=lambda: {
+            "momentum_trend": True,
+            "mean_reversion": True,
+            "chip_flow": True,
+        }
+    )
+    weights: Dict[str, float] = Field(
+        default_factory=lambda: {
+            "momentum_trend": 0.4,
+            "mean_reversion": 0.3,
+            "chip_flow": 0.3,
+        }
+    )
+    threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    strategy_params: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    risk_config: Dict[str, Any] = Field(default_factory=dict)
+    backtest_config: Dict[str, Any] = Field(default_factory=dict)
+
+
 _status_lock = threading.RLock()
 _status: Dict[str, Dict[str, object]] = {}
 SHIOAJI_LOCK = threading.Lock()
@@ -94,6 +124,7 @@ SHIOAJI_LOCK_TIMEOUT_SEC = 16
 
 SHIOAJI_GATEWAY = ShioajiGateway(ENV_PATH)
 SHIOAJI_SERVICE = ShioajiWorkflowService(SHIOAJI_GATEWAY)
+STRATEGY_SERVICE = StrategyWorkflowService()
 
 
 def _init_action(action: str) -> None:
@@ -273,6 +304,69 @@ def _run_ai_assistant(req: AIAssistantRequest) -> None:
             progress=100,
             message="AI 協作中心完成",
             append_log=f"報表: /reports/{html_path.name}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _update(action, state="error", progress=0, message=str(exc), append_log=str(exc))
+
+
+def _run_strategy_backtest(req: StrategyBacktestRequest) -> None:
+    action = "strategy-backtest"
+    try:
+        _update(action, state="running", progress=10, message=f"載入資料：{req.symbol}…", append_log="載入策略回測資料")
+        cfg = _build_strategy_config(req)
+        _update(action, progress=40, message="執行多策略回測…", append_log="執行多策略回測")
+        result = STRATEGY_SERVICE.run_multi_strategy_backtest(cfg)
+        passed = bool(result.get("passed"))
+        metrics = result.get("metrics", {})
+        trade_count = metrics.get("trade_count", 0)
+        total_return = float(metrics.get("total_return") or 0.0)
+        if passed:
+            msg = f"回測完成：交易 {trade_count} 筆，總報酬 {total_return:.2%}"
+        else:
+            msg = str(result.get("message") or "回測完成")
+        _update(
+            action,
+            state="done",
+            progress=100,
+            message=msg,
+            append_log=msg,
+            result=result,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _update(action, state="error", progress=0, message=str(exc), append_log=str(exc))
+
+
+def _build_strategy_config(req: StrategyBacktestRequest) -> StrategyRunConfig:
+    return StrategyRunConfig(
+        symbol=req.symbol,
+        market=req.market,
+        start_date=req.start_date,
+        end_date=req.end_date,
+        enabled=req.enabled,
+        weights=req.weights,
+        threshold=req.threshold,
+        strategy_params=req.strategy_params,
+        risk_config=req.risk_config,
+        backtest_config=req.backtest_config,
+    )
+
+
+def _run_strategy_backtest_export(req: StrategyBacktestRequest) -> None:
+    action = "strategy-backtest-export"
+    try:
+        _update(action, state="running", progress=10, message=f"載入資料：{req.symbol}…", append_log="載入策略回測資料")
+        cfg = _build_strategy_config(req)
+        _update(action, progress=45, message="執行回測與匯出…", append_log="執行回測與匯出 artifacts")
+        result = STRATEGY_SERVICE.run_multi_strategy_backtest_export(cfg, output_dir=REPORTS_DIR)
+        files = result.get("export", {}).get("files", {})
+        message = f"匯出完成（{len(files)} 個檔案）" if files else str(result.get("message") or "匯出完成")
+        _update(
+            action,
+            state="done",
+            progress=100,
+            message=message,
+            append_log=message,
+            result=result,
         )
     except Exception as exc:  # noqa: BLE001
         _update(action, state="error", progress=0, message=str(exc), append_log=str(exc))
@@ -518,6 +612,21 @@ def shioaji_env() -> JSONResponse:
     return JSONResponse({"status": "ok", "data": SHIOAJI_GATEWAY.env_status()})
 
 
+@app.get("/api/strategy/default")
+def strategy_default() -> JSONResponse:
+    return JSONResponse({"status": "ok", "data": STRATEGY_SERVICE.default_payload()})
+
+
+@app.post("/api/strategy/backtest/export")
+def strategy_backtest_export(req: StrategyBacktestRequest) -> JSONResponse:
+    try:
+        cfg = _build_strategy_config(req)
+        data = STRATEGY_SERVICE.run_multi_strategy_backtest_export(cfg, output_dir=REPORTS_DIR)
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"status": "error", "error": str(exc)}, status_code=500)
+
+
 @app.post("/api/echo")
 async def echo(request: Request) -> JSONResponse:
     payload = await request.json()
@@ -543,6 +652,28 @@ def run_swing_report(req: SwingReportRequest) -> JSONResponse:
 @app.post("/api/run/ai-assistant")
 def run_ai_assistant(req: AIAssistantRequest) -> JSONResponse:
     return _start_action("ai-assistant", _run_ai_assistant, req, "AI 協作中心正在執行中", "AI 協作中心開始執行")
+
+
+@app.post("/api/run/strategy-backtest")
+def run_strategy_backtest(req: StrategyBacktestRequest) -> JSONResponse:
+    return _start_action(
+        "strategy-backtest",
+        _run_strategy_backtest,
+        req,
+        "多策略回測正在執行中",
+        "多策略回測開始執行",
+    )
+
+
+@app.post("/api/run/strategy-backtest-export")
+def run_strategy_backtest_export(req: StrategyBacktestRequest) -> JSONResponse:
+    return _start_action(
+        "strategy-backtest-export",
+        _run_strategy_backtest_export,
+        req,
+        "回測匯出正在執行中",
+        "回測匯出開始執行",
+    )
 
 
 @app.post("/api/run/account-balance")

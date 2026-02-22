@@ -4,11 +4,16 @@
 
 ## 功能重點
 
-- 多資料來源（YFinance / Shioaji*）
+- 多資料來源（YFinance / FinMind / Shioaji*）
 - 可擴充策略架構，策略輸出統一為：
   - `position`：目標持倉（-1/0/1）
   - `signal`：進出場事件（`position.diff()`）
-- 回測引擎：支援交易成本（手續費、交易稅、滑價）
+- 多策略波段系統（A/B/C）：
+  - A: 動能趨勢（MA20/MA60 + Donchian + 量能）
+  - B: 均值回歸（RSI + Bollinger 反彈 + 長期濾網）
+  - C: 籌碼跟隨（外資/投信 5 日買超 + 集中度 proxy）
+- 回測引擎：支援 T+1 開盤成交模擬、交易成本（手續費、交易稅、滑價）
+- 共用風控：停損、移動停利、時間出場
 - 報表：產生 HTML 互動報表與 CSV 原始資料
 - Shioaji AI 協作中心：同步官方 AI 文件、提示詞模板、安裝指引與常用程式片段
 - 風險管理與即時交易模組（本期不展開）
@@ -21,7 +26,7 @@ quant-trade/
 ├── broker/               # 券商介面（Paper / Shioaji）
 ├── config/               # 全域設定
 ├── data/                 # 資料處理與下載
-├── strategies/           # 策略
+├── strategies/           # 策略（含 strategies/multi 多策略系統）
 ├── live_trading/         # 即時交易（保留）
 ├── reports/              # 報表輸出
 ├── docs/shioaji/          # Shioaji AI 文件快取
@@ -127,6 +132,7 @@ python run_web.py --reload
 ```
 
 控制台可調整參數：
+- 多策略工作台：策略開關/權重/門檻、風控參數、交易成本、回測期間
 - 短期投資 Dashboard：Top N / 流動性預篩數量 / 回溯天數
 - 波段報表：開始日 / 結束日 / 回溯天數
 - AI 協作中心：是否強制同步文件
@@ -145,6 +151,30 @@ python run_web.py --host 0.0.0.0 --port 8080
 ```
 
 若帳戶查詢無回應，請避免同時點多個帳戶查詢（帳務 API 需要序列化），可先看 `reports/control_panel.log` 追蹤進度。
+
+### 7-1) 多策略回測資料欄位
+
+輸入 DataFrame 至少需要：
+- `Open`, `High`, `Low`, `Close`, `Volume`
+
+策略 C（台股籌碼）會額外使用：
+- `Foreign_Net_Buy`
+- `InvestmentTrust_Net_Buy`
+- `Chip_Concentration_Proxy`
+
+若你沒有自行提供籌碼欄位，系統會嘗試透過 FinMind 載入（失敗時自動降級，不阻斷策略 A/B）。
+
+### 7-2) 回測匯出 API（CSV/JSON）
+
+可直接呼叫 API 進行回測並輸出 artifacts 到 `reports/`：
+
+`POST /api/strategy/backtest/export`
+
+請求 body 可沿用控制台的多策略參數（`symbol`, `market`, `enabled`, `weights`, `threshold`, `risk_config`, `backtest_config`）。
+
+回應會包含：
+- `export.files`: 匯出的檔名（summary JSON / trades CSV / signals CSV / equity CSV）
+- `export.urls`: 可直接開啟下載的 `/reports/...` 路徑
 
 ### 8) Shioaji 模擬測試與正式切換（Web）
 
@@ -187,6 +217,7 @@ SHIOAJI_SECRET=your_secret
 SHIOAJI_CA_PATH=/path/to/ca
 SHIOAJI_CA_PASSWORD=your_ca_password
 SHIOAJI_CA_PERSON_ID=your_person_id
+FINMIND_TOKEN=your_finmind_token  # 可選：策略 C 資料品質更完整
 ```
 
 在推上 GitHub 前，請確認：

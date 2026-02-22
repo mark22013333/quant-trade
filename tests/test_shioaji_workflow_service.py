@@ -113,3 +113,29 @@ def test_verify_production_handles_permission_error(monkeypatch):
 
     assert result["passed"] is False
     assert result["error"] == "production_permission"
+
+
+def test_call_account_api_fallback_to_positional_argument():
+    service = _build_service()
+    token = object()
+
+    class Api:
+        @staticmethod
+        def method(acc):
+            return {"ok": acc}
+
+    result = service._call_account_api(Api.method, token, allow_no_account=False)
+    assert result["ok"] is token
+
+
+def test_call_account_api_fallback_to_no_argument():
+    service = _build_service()
+    token = object()
+
+    class Api:
+        @staticmethod
+        def method():
+            return {"ok": True}
+
+    result = service._call_account_api(Api.method, token, allow_no_account=True)
+    assert result["ok"] is True
