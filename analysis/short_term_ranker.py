@@ -110,7 +110,12 @@ def score_stocks(features_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def run_short_term_ranking(top_n: int = 20, preselect_n: int = 300, lookback_days: int = 90) -> RankingOutput:
+def run_short_term_ranking(
+    top_n: int = 20,
+    preselect_n: int = 300,
+    lookback_days: int = 90,
+    progress_fn=None,
+) -> RankingOutput:
     universe = get_twse_universe().df
     liquidity = get_top_liquid_stocks(top_n=preselect_n).df
 
@@ -125,17 +130,20 @@ def run_short_term_ranking(top_n: int = 20, preselect_n: int = 300, lookback_day
     start_date = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
 
     rows = []
-    for _, row in candidates.iterrows():
-        symbol = row["symbol"]
+    total = len(candidates)
+    for idx, row in enumerate(candidates.itertuples(index=False), start=1):
+        if progress_fn:
+            progress_fn(idx, total)
+        symbol = row.symbol
         data = market_data.load_data(symbol, start_date, end_date)
         features = compute_features(data)
         if not features:
             continue
         features.update({
-            "code": row["code"],
+            "code": row.code,
             "symbol": symbol,
-            "name": row["name"],
-            "industry": row.get("industry", ""),
+            "name": row.name,
+            "industry": getattr(row, "industry", ""),
         })
         rows.append(features)
 

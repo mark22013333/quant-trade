@@ -10,6 +10,7 @@
   - `signal`：進出場事件（`position.diff()`）
 - 回測引擎：支援交易成本（手續費、交易稅、滑價）
 - 報表：產生 HTML 互動報表與 CSV 原始資料
+- Shioaji AI 協作中心：同步官方 AI 文件、提示詞模板、安裝指引與常用程式片段
 - 風險管理與即時交易模組（本期不展開）
 
 ## 專案結構
@@ -23,9 +24,13 @@ quant-trade/
 ├── strategies/           # 策略
 ├── live_trading/         # 即時交易（保留）
 ├── reports/              # 報表輸出
+├── docs/shioaji/          # Shioaji AI 文件快取
+├── prompts/               # AI 提示詞模板
+├── tools/                 # 工具腳本（同步 / 檢查）
 ├── tests/                # 測試
 ├── main.py               # CLI 入口
 ├── swing_analysis.py     # 波段分析報表
+├── ai_assistant_dashboard.py # AI 協作中心 HTML 產生器
 └── requirements.txt      # 依賴
 ```
 
@@ -92,7 +97,76 @@ python main.py --mode dashboard
 ./run_dashboard.sh
 ```
 
-### 6) 執行測試
+### 6) 產生 Shioaji AI 協作中心
+
+```bash
+python main.py --mode shioaji-ai
+```
+
+輸出位置：
+- `reports/shioaji_ai_dashboard.html`
+- `docs/shioaji/llms.txt`
+- `docs/shioaji/llms-full.txt`（不進 git）
+
+若要以 Web 方式查看（FastAPI）：
+
+```bash
+python run_web.py --reload
+```
+
+### 7) Web 控制台（報表 + Shioaji 測試）
+
+```bash
+python run_web.py --reload
+```
+
+或使用一鍵腳本：
+
+```bash
+./run_web.sh
+```
+
+控制台可調整參數：
+- 短期投資 Dashboard：Top N / 流動性預篩數量 / 回溯天數
+- 波段報表：開始日 / 結束日 / 回溯天數
+- AI 協作中心：是否強制同步文件
+- Shioaji 測試中心：登入測試 / 證券下單測試 / 期貨下單測試 / 一鍵模擬整套測試
+- 正式環境切換檢核：檢查 `production permission`、帳戶 `signed` 狀態、CA 設定
+
+控制台會顯示後端心跳與 Log，執行紀錄同時寫入：
+- `reports/control_panel.log`
+
+若要以 Python 直接啟動（適合 IDE Run/Stop）：
+
+```bash
+python run_web.py
+python run_web.py --reload
+python run_web.py --host 0.0.0.0 --port 8080
+```
+
+若帳戶查詢無回應，請避免同時點多個帳戶查詢（帳務 API 需要序列化），可先看 `reports/control_panel.log` 追蹤進度。
+
+### 8) Shioaji 模擬測試與正式切換（Web）
+
+控制台提供五個交易測試動作：
+- `登入測試`：驗證 API key/secret 可登入
+- `證券下單測試`：送出測試股票單並回報狀態
+- `期貨下單測試`：送出測試期貨單並回報狀態
+- `一鍵模擬整套測試`：依序執行登入、證券、期貨測試（內建最小間隔）
+- `檢核正式環境`：以正式環境登入並檢查 `signed=True` 與切換條件
+
+安全機制：
+- 正式環境下單測試預設鎖定，需在頁面勾選「允許正式環境下單測試」
+- 若 token 沒有正式權限，檢核結果會直接提示開通步驟
+- 所有流程結果皆保留 JSON raw 資料，便於除錯與稽核
+
+### 9) Shioaji 環境檢查（CLI）
+
+```bash
+python tools/shioaji_check.py
+```
+
+### 10) 執行測試
 
 ```bash
 pytest -q
@@ -118,8 +192,43 @@ SHIOAJI_CA_PERSON_ID=your_person_id
 在推上 GitHub 前，請確認：
 - `git status` 無敏感檔案
 - `.env` 未被追蹤
+- `docs/shioaji/llms-full.txt` 未被追蹤
 - 不要將 API KEY 寫進任何程式碼
 
+## 帳戶資訊與交易測試（正式帳戶）
+
+Web 控制台已加入「交割帳戶餘額 / 可用買進額度 / 交割明細 / 持倉明細 / 一鍵帳戶診斷」查詢功能。需先設定以下環境變數：
+
+```
+SHIOAJI_APIKEY=your_key
+SHIOAJI_SECRET=your_secret
+```
+
+若需要 CA 憑證：
+
+```
+SHIOAJI_CA_PATH=/path/to/ca
+SHIOAJI_CA_PASSWORD=your_ca_password
+SHIOAJI_CA_PERSON_ID=your_person_id
+```
+
+> 注意：正式帳戶會讀取真實資金資訊，請確認帳戶權限與風險。
+
+帳戶資訊功能需要安裝 `shioaji` 套件（已加入 `requirements.txt`），若之前已安裝過依賴，請重新執行：
+
+```bash
+pip install -r requirements.txt
+```
+
+若使用正式帳戶，請確認你的 API Token 已取得「正式盤」權限；否則會出現
+`Token doesn't have production permission` 的錯誤訊息。
+
+控制台的一鍵帳戶診斷會顯示「正式盤權限」狀態，若未開通會提示改用模擬或申請權限。
+
+控制台會顯示：
+- 每次動作的進度、耗時秒數
+- 查詢結果 JSON（若 API 回傳結構不同，會保留 raw 資料）
+- 執行紀錄也會寫入 `reports/control_panel.log`
 ## 依賴清單
 
 - pandas, numpy

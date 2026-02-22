@@ -82,13 +82,22 @@ def run_dashboard(_args):
     print(f"Dashboard 已產生: {html_path}")
 
 
+def run_shioaji_ai(_args):
+    from ai_assistant_dashboard import generate_ai_dashboard
+    from tools.shioaji_ai_sync import sync_ai_docs
+
+    sync_ai_docs()
+    html_path = generate_ai_dashboard()
+    print(f"Shioaji AI 協作中心已產生: {html_path}")
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="台股量化交易系統")
     parser.add_argument(
         "--mode",
-        choices=["backtest", "report", "dashboard"],
+        choices=["backtest", "report", "dashboard", "shioaji-ai"],
         default="backtest",
-        help="執行模式: backtest / report / dashboard"
+        help="執行模式: backtest / report / dashboard / shioaji-ai"
     )
     parser.add_argument("--symbol", default="2330.TW", help="回測標的 (預設 2330.TW)")
     parser.add_argument("--start-date", dest="start_date", help="回測起始日 YYYY-MM-DD")
@@ -108,6 +117,8 @@ def main():
         run_report(args)
     elif args.mode == "dashboard":
         run_dashboard(args)
+    elif args.mode == "shioaji-ai":
+        run_shioaji_ai(args)
 
 
 if __name__ == "__main__":

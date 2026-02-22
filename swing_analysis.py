@@ -211,18 +211,24 @@ def visualize_results(industry_results, output_dir="./results"):
     
     print(f"\n分析結果已儲存至 {output_dir} 目錄")
 
-def main():
+def generate_swing_report(
+    open_browser: bool = True,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    lookback_days: int = 365,
+):
     """
-    主程式
+    產生波段分析 HTML 報表，並可選擇是否自動開啟瀏覽器。
     """
     print("=== 台股波段交易適合度分析 ===")
-    
+
     # 設定分析時間範圍 (預設近一年)
-    end_date = datetime.now().strftime('%Y-%m-%d')
-    start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
-    
+    end_date = end_date or datetime.now().strftime('%Y-%m-%d')
+    if start_date is None:
+        start_date = (datetime.now() - timedelta(days=lookback_days)).strftime('%Y-%m-%d')
+
     print(f"分析時間範圍: {start_date} 至 {end_date}")
-    
+
     # 波段策略參數設定
     strategy_params = {
         'rsi_period': 14,
@@ -238,16 +244,16 @@ def main():
         'profit_target': 0.08,
         'stop_loss': 0.05
     }
-    
+
     # 使用簡化版網頁報表分析器進行分析，避免維度不匹配問題
     industry_results = analyze_industry_groups_simple(start_date, end_date, strategy_params)
-    
+
     # 使用網頁報表呈現分析結果 (取代舊版視窗介面視覺化)
     output_dir = "./reports"
-    
+
     # 建立 HTML 報表產生器
     report_generator = HtmlReportGenerator(output_dir)
-    
+
     # 生成網頁報表
     report_path = report_generator.generate_report(
         industry_results,
@@ -255,13 +261,21 @@ def main():
         start_date,
         end_date
     )
-    
+
     # 自動在瀏覽器中開啟報表
-    if report_path:
+    if report_path and open_browser:
         webbrowser.open('file://' + os.path.abspath(report_path))
-    
+
     # 同時也輸出傳統報表 (可選)
     # visualize_results(industry_results)
+    return report_path
+
+
+def main():
+    """
+    主程式
+    """
+    generate_swing_report(open_browser=True)
 
 if __name__ == "__main__":
     main()

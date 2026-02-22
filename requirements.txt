@@ -9,3 +9,8 @@ python-dotenv
 TA-Lib
 pyarrow
 pytest
+requests
+certifi
+fastapi
+uvicorn
+shioaji
