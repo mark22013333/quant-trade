@@ -1,12 +1,25 @@
 from __future__ import annotations
 
 import argparse
+import faulthandler
 import os
 import sys
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def ensure_runtime_cache_dirs() -> None:
+    """
+    Ensure native libs (matplotlib/fontconfig) use writable cache directories.
+    """
+    cache_root = PROJECT_ROOT / ".cache"
+    mpl_cache = cache_root / "matplotlib"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    mpl_cache.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("XDG_CACHE_HOME", str(cache_root))
+    os.environ.setdefault("MPLCONFIGDIR", str(mpl_cache))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,6 +50,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     os.chdir(PROJECT_ROOT)
+    faulthandler.enable(all_threads=True)
+    ensure_runtime_cache_dirs()
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(PROJECT_ROOT))
 

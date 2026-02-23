@@ -12,11 +12,6 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from ai_assistant_dashboard import generate_ai_dashboard
-from analysis.short_term_ranker import run_short_term_ranking
-from dashboard_generator import generate_dashboard
-from swing_analysis import generate_swing_report
-from tools.shioaji_ai_sync import sync_ai_docs
 from web.services import (
     ShioajiGateway,
     ShioajiWorkflowService,
@@ -241,6 +236,9 @@ def _finalize_test_result(action: str, result: Dict[str, object]) -> None:
 def _run_short_term(req: ShortTermRequest) -> None:
     action = "short-term"
     try:
+        from analysis.short_term_ranker import run_short_term_ranking
+        from dashboard_generator import generate_dashboard
+
         _update(action, state="running", progress=5, message="準備資料來源…")
 
         def progress_fn(current: int, total: int) -> None:
@@ -269,6 +267,8 @@ def _run_short_term(req: ShortTermRequest) -> None:
 def _run_swing(req: SwingReportRequest) -> None:
     action = "swing-report"
     try:
+        from swing_analysis import generate_swing_report
+
         _update(action, state="running", progress=10, message="啟動波段分析…")
         report_path = generate_swing_report(
             open_browser=False,
@@ -294,6 +294,9 @@ def _run_swing(req: SwingReportRequest) -> None:
 def _run_ai_assistant(req: AIAssistantRequest) -> None:
     action = "ai-assistant"
     try:
+        from ai_assistant_dashboard import generate_ai_dashboard
+        from tools.shioaji_ai_sync import sync_ai_docs
+
         _update(action, state="running", progress=20, message="同步官方文件…")
         sync_ai_docs(force=req.force)
         _update(action, progress=70, message="產生 AI 協作中心…")
