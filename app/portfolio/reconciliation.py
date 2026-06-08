@@ -23,6 +23,9 @@ class ReconciliationResult:
 
 
 class ReconciliationService:
+    def __init__(self, *, repository: Any | None = None):
+        self.repository = repository
+
     def reconcile(
         self,
         *,
@@ -58,10 +61,13 @@ class ReconciliationService:
             blockers.append("position_diff")
         if open_order_diffs:
             blockers.append("open_order_diff")
-        return ReconciliationResult(
+        result = ReconciliationResult(
             matched=not blockers,
             cash_diff=cash_diff,
             position_diffs=position_diffs,
             open_order_diffs=open_order_diffs,
             blocking_reasons=blockers,
         )
+        if self.repository is not None and hasattr(self.repository, "add_reconciliation_record"):
+            self.repository.add_reconciliation_record(result=result.to_dict())
+        return result

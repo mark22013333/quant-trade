@@ -31,12 +31,14 @@ class PromotionGate:
         max_single_live_order_twd: float = 10_000,
         max_daily_live_order_twd: float = 30_000,
         max_daily_live_orders: int = 3,
+        repository: Any | None = None,
     ):
         self.min_paper_days = int(min_paper_days)
         self.max_drawdown_limit = float(max_drawdown_limit)
         self.max_single_live_order_twd = float(max_single_live_order_twd)
         self.max_daily_live_order_twd = float(max_daily_live_order_twd)
         self.max_daily_live_orders = int(max_daily_live_orders)
+        self.repository = repository
 
     def evaluate(
         self,
@@ -52,6 +54,7 @@ class PromotionGate:
         single_order_value: float = 0.0,
         daily_order_value: float = 0.0,
         daily_order_count: int = 0,
+        repository: Any | None = None,
     ) -> PromotionGateDecision:
         blockers: list[str] = []
         if int(paper_days) < self.min_paper_days:
@@ -71,7 +74,7 @@ class PromotionGate:
         if int(daily_order_count) > self.max_daily_live_orders:
             blockers.append("daily_live_order_count_exceeded")
         accepted = not blockers
-        return PromotionGateDecision(
+        decision = PromotionGateDecision(
             strategy_name=str(strategy_name),
             strategy_version=str(strategy_version),
             paper_days=int(paper_days),
@@ -82,3 +85,7 @@ class PromotionGate:
             reason="ok" if accepted else blockers[0],
             blocking_reasons=blockers,
         )
+        repo = repository or self.repository
+        if repo is not None and hasattr(repo, "add_promotion_gate_record"):
+            repo.add_promotion_gate_record(decision=decision.to_dict())
+        return decision

@@ -47,8 +47,9 @@ class PreviewDecision:
 
 
 class OrderPreviewService:
-    def __init__(self, *, ttl_seconds: int = 120):
+    def __init__(self, *, ttl_seconds: int = 120, repository: Any | None = None):
         self.ttl_seconds = max(1, int(ttl_seconds))
+        self.repository = repository
         self._previews: dict[str, OrderPreview] = {}
 
     def create_preview(
@@ -61,6 +62,7 @@ class OrderPreviewService:
         checks: list[dict[str, Any]] | None = None,
         strategy_version: str | None = None,
         signal_id: str | None = None,
+        repository: Any | None = None,
     ) -> OrderPreview:
         preview = OrderPreview(
             strategy_name=str(intent.strategy_name or intent.metadata.get("strategy_name") or "manual"),
@@ -77,6 +79,9 @@ class OrderPreviewService:
             expires_at=datetime.utcnow() + timedelta(seconds=self.ttl_seconds),
         )
         self._previews[preview.preview_id] = preview
+        repo = repository or self.repository
+        if repo is not None and hasattr(repo, "add_order_preview_record"):
+            repo.add_order_preview_record(preview=preview.to_dict(), intent=intent.to_dict())
         return preview
 
     def approve(
@@ -86,15 +91,26 @@ class OrderPreviewService:
         intent: OrderIntent,
         manual_confirmed: bool,
         now: datetime | None = None,
+        repository: Any | None = None,
     ) -> PreviewDecision:
+        repo = repository or self.repository
         preview = self._previews.get(str(preview_id or ""))
         if preview is None:
-            return PreviewDecision(preview_id=str(preview_id or ""), accepted=False, reason="preview_not_found")
+            return self._record_decision(
+                PreviewDecision(preview_id=str(preview_id or ""), accepted=False, reason="preview_not_found"),
+                repository=repo,
+            )
         now_dt = now or datetime.utcnow()
         if now_dt > preview.expires_at:
-            return PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="preview_expired")
+            return self._record_decision(
+                PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="preview_expired"),
+                repository=repo,
+            )
         if intent.environment == "live" and not manual_confirmed:
-            return PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="manual_confirmation_required")
+            return self._record_decision(
+                PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="manual_confirmation_required"),
+                repository=repo,
+            )
         if intent.environment == "live":
             for key, expected in (
                 ("symbol", preview.symbol),
@@ -108,10 +124,25 @@ class OrderPreviewService:
                 else:
                     same = actual == expected
                 if not same:
-                    return PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="preview_intent_mismatch")
+                    return self._record_decision(
+                        PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="preview_intent_mismatch"),
+                        repository=repo,
+                    )
             if not intent.strategy_name or not intent.signal_id or not intent.metadata.get("strategy_version"):
-                return PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="live_metadata_required")
-        return PreviewDecision(preview_id=preview.preview_id, accepted=True, reason="ok", approved_intent=intent)
+                return self._record_decision(
+                    PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="live_metadata_required"),
+                    repository=repo,
+                )
+        return self._record_decision(
+            PreviewDecision(preview_id=preview.preview_id, accepted=True, reason="ok", approved_intent=intent),
+            repository=repo,
+        )
 
     def get(self, preview_id: str) -> OrderPreview | None:
         return self._previews.get(str(preview_id or ""))
+
+    def _record_decision(self, decision: PreviewDecision, *, repository: Any | None = None) -> PreviewDecision:
+        repo = repository or self.repository
+        if repo is not None and hasattr(repo, "update_order_preview_decision"):
+            repo.update_order_preview_decision(decision=decision.to_dict())
+        return decision

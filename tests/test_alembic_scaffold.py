@@ -9,7 +9,8 @@ from app.db.schema import ALEMBIC_HEAD_REVISION
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 INITIAL_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260605_0001_initial_schema.py"
-HEAD_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260608_0002_trading_execution_records.py"
+TRADING_EXECUTION_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260608_0002_trading_execution_records.py"
+HEAD_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260608_0003_trading_audit_records.py"
 
 
 def _revision_assignments() -> dict[str, object]:
@@ -32,7 +33,7 @@ def test_alembic_scaffold_points_to_current_schema_head():
     values = _revision_assignments()
 
     assert values["revision"] == ALEMBIC_HEAD_REVISION
-    assert values["down_revision"] == "20260605_0001"
+    assert values["down_revision"] == "20260608_0002"
 
 
 def test_initial_revision_uses_application_metadata():
@@ -45,8 +46,18 @@ def test_initial_revision_uses_application_metadata():
 
 
 def test_trading_execution_records_revision_is_checkfirst_safe():
-    text = HEAD_REVISION_PATH.read_text(encoding="utf-8")
+    text = TRADING_EXECUTION_REVISION_PATH.read_text(encoding="utf-8")
 
     assert "TradingExecutionRecord" in text
     assert "checkfirst=True" in text
     assert "trading_execution_records" in Base.metadata.tables
+
+
+def test_trading_audit_records_revision_is_checkfirst_safe():
+    text = HEAD_REVISION_PATH.read_text(encoding="utf-8")
+
+    assert "OrderPreviewRecord" in text
+    assert "PromotionGateRecord" in text
+    assert "ReconciliationRecord" in text
+    assert "checkfirst=True" in text
+    assert "order_preview_records" in Base.metadata.tables

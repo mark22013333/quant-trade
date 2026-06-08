@@ -96,9 +96,11 @@ def test_tw_live_api_is_token_protected(monkeypatch):
     client = TestClient(app)
 
     blocked = client.get("/api/tw-live/health?simulation=true")
+    blocked_audit = client.get("/api/tw-live/audit")
     allowed = client.get("/api/tw-live/health?simulation=true", headers={"Authorization": "Bearer secret-token"})
 
     assert blocked.status_code == 401
+    assert blocked_audit.status_code == 401
     assert allowed.status_code == 200
     assert allowed.json()["status"] == "ok"
 

@@ -113,6 +113,7 @@ class TradingExecutionService:
                 preview_id=preview_id,
                 intent=intent,
                 manual_confirmed=manual_confirmed,
+                repository=self.repository,
             )
             if not bool(decision.accepted):
                 return self._live_rejected(intent, str(decision.reason))

@@ -332,6 +332,10 @@
             <button class="action-btn ghost" id="tw-check-gate">檢查 Paper-to-Live Gate</button>
             <div class="result" id="tw-gate-result"></div>
           </div>
+          <div class="action-row">
+            <button class="action-btn ghost" id="tw-refresh-audit">查詢最近稽核紀錄</button>
+            <div class="result" id="tw-audit-result"></div>
+          </div>
         </div>
       </div>
 
@@ -2050,6 +2054,15 @@
       }
     }
 
+    async function refreshTwAudit() {
+      try {
+        const res = await fetch('/api/tw-live/audit?limit=10');
+        renderInlineJson('tw-audit-result', await res.json());
+      } catch (err) {
+        renderInlineJson('tw-audit-result', { status: 'error', error: err?.message || String(err) });
+      }
+    }
+
     function setFinMindUsageState(text, level = 'neutral') {
       const stateEl = document.getElementById('finmind-usage-state');
       if (!stateEl) return;
@@ -2248,6 +2261,7 @@
     document.getElementById('tw-live-snapshot').addEventListener('click', refreshTwLiveSnapshot);
     document.getElementById('tw-create-preview').addEventListener('click', createTwOrderPreview);
     document.getElementById('tw-check-gate').addEventListener('click', checkTwPromotionGate);
+    document.getElementById('tw-refresh-audit').addEventListener('click', refreshTwAudit);
     document.getElementById('refresh-finmind-usage').addEventListener('click', refreshFinMindUsage);
     document.getElementById('refresh-data-health').addEventListener('click', refreshDataHealth);
     document.getElementById('refresh-pipeline-runs').addEventListener('click', () => refreshPipelineRuns(20));

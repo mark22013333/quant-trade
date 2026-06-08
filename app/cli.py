@@ -357,6 +357,8 @@ def cmd_order_preview(args) -> None:
     from app.execution import OrderIntent
     from app.execution.order_preview import OrderPreviewService
 
+    TradingRepository, get_session_factory, init_db = _load_db_modules()
+    init_db()
     intent = OrderIntent(
         source="cli",
         environment="simulation",
@@ -370,30 +372,57 @@ def cmd_order_preview(args) -> None:
         metadata={"strategy_version": args.strategy_version},
     )
     estimated_total_cost = estimate_buy_total_cost(float(args.price) * int(args.quantity)) if args.side == "buy" else 0.0
-    preview = OrderPreviewService(ttl_seconds=int(args.ttl_seconds)).create_preview(
-        intent=intent,
-        estimated_total_cost=estimated_total_cost,
-        available_cash=float(args.available_cash),
-        position_before=int(args.position_before),
-        checks=[{"name": "cli_preview", "passed": True}],
-        strategy_version=args.strategy_version,
-        signal_id=args.signal_id,
-    )
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        repo = TradingRepository(session)
+        preview = OrderPreviewService(ttl_seconds=int(args.ttl_seconds), repository=repo).create_preview(
+            intent=intent,
+            estimated_total_cost=estimated_total_cost,
+            available_cash=float(args.available_cash),
+            position_before=int(args.position_before),
+            checks=[{"name": "cli_preview", "passed": True}],
+            strategy_version=args.strategy_version,
+            signal_id=args.signal_id,
+        )
+        session.commit()
     print(json.dumps(preview.to_dict(), ensure_ascii=False, indent=2))
 
 
 def cmd_reconcile(args) -> None:
     from app.portfolio.reconciliation import ReconciliationService
 
+    TradingRepository, get_session_factory, init_db = _load_db_modules()
+    init_db()
     expected_positions = _parse_position_map(args.expected_positions)
     actual_positions = _parse_position_map(args.actual_positions)
-    result = ReconciliationService().reconcile(
-        expected_cash=float(args.expected_cash),
-        actual_cash=float(args.actual_cash),
-        expected_positions=expected_positions,
-        actual_positions=actual_positions,
-    )
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        repo = TradingRepository(session)
+        result = ReconciliationService(repository=repo).reconcile(
+            expected_cash=float(args.expected_cash),
+            actual_cash=float(args.actual_cash),
+            expected_positions=expected_positions,
+            actual_positions=actual_positions,
+        )
+        session.commit()
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+
+
+def cmd_trading_audit(args) -> None:
+    TradingRepository, get_session_factory, init_db = _load_db_modules()
+
+    init_db()
+    limit = max(1, min(100, int(args.limit)))
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        repo = TradingRepository(session)
+        payload = {
+            "executions": repo.list_recent_trading_execution_records(limit=limit),
+            "previews": repo.list_recent_order_preview_records(limit=limit),
+            "promotion_gates": repo.list_recent_promotion_gate_records(limit=limit),
+            "reconciliations": repo.list_recent_reconciliation_records(limit=limit),
+        }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def _parse_position_map(text: str | None) -> dict[str, int]:
@@ -610,6 +639,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--expected-positions", default="", help="e.g. 2330:3,2317:1")
     p.add_argument("--actual-positions", default="", help="e.g. 2330:3,2317:1")
     p.set_defaults(func=cmd_reconcile)
+
+    p = sub.add_parser("trading-audit", help="List recent trading audit records")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=cmd_trading_audit)
 
     p = sub.add_parser("paper-ledger", help="Simulate T+2 paper ledger and export HTML/CSV/JSON")
     p.add_argument("--symbol", required=True, help="e.g. 2330")

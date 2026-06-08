@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime
 from typing import Iterable
 
 from sqlalchemy import and_, delete, distinct, func, select
@@ -17,12 +17,16 @@ from app.db.models import (
     HoldingSharesPerDaily,
     InstitutionalChipDaily,
     Instrument,
+    OrderPreviewRecord,
     ShareholdingDaily,
+    PromotionGateRecord,
+    ReconciliationRecord,
     SyncJob,
     TradingExecutionRecord,
     Universe0050Snapshot,
     WatchPoolEntry,
 )
+from app.security import redact_sensitive
 
 
 class TradingRepository:
@@ -682,3 +686,175 @@ class TradingRepository:
             execution_json=json.dumps(result, ensure_ascii=False, default=str),
         )
         self.session.add(row)
+
+    def add_order_preview_record(self, *, preview: dict, intent: dict | None = None) -> None:
+        safe_preview = redact_sensitive(dict(preview or {}))
+        safe_intent = redact_sensitive(dict(intent or {}))
+        row = OrderPreviewRecord(
+            preview_id=str(safe_preview.get("preview_id", "")),
+            intent_id=str(safe_intent.get("intent_id", "")),
+            strategy_name=str(safe_preview.get("strategy_name", "")),
+            strategy_version=str(safe_preview.get("strategy_version", "")),
+            signal_id=str(safe_preview.get("signal_id", "")),
+            symbol=str(safe_preview.get("symbol", "")),
+            side=str(safe_preview.get("side", "")),
+            price=float(safe_preview.get("price") or 0.0),
+            qty=int(safe_preview.get("quantity") or 0),
+            estimated_total_cost=float(safe_preview.get("estimated_total_cost") or 0.0),
+            available_cash=(
+                float(safe_preview["available_cash"]) if safe_preview.get("available_cash") is not None else None
+            ),
+            position_before=int(safe_preview.get("position_before") or 0),
+            status="created",
+            reason="",
+            preview_json=json.dumps(safe_preview, ensure_ascii=False, default=str),
+            decision_json="{}",
+            expires_at=self._parse_datetime(safe_preview.get("expires_at")) or datetime.utcnow(),
+            created_at=self._parse_datetime(safe_preview.get("created_at")) or datetime.utcnow(),
+        )
+        self.session.add(row)
+
+    def update_order_preview_decision(self, *, decision: dict) -> None:
+        safe_decision = redact_sensitive(dict(decision or {}))
+        preview_id = str(safe_decision.get("preview_id", ""))
+        if not preview_id:
+            return
+        row = self.session.execute(
+            select(OrderPreviewRecord).where(OrderPreviewRecord.preview_id == preview_id).limit(1)
+        ).scalar_one_or_none()
+        if row is None:
+            row = OrderPreviewRecord(
+                preview_id=preview_id,
+                intent_id="",
+                symbol="",
+                side="",
+                price=0.0,
+                qty=0,
+                expires_at=datetime.utcnow(),
+                status="decision_only",
+            )
+            self.session.add(row)
+        row.status = "accepted" if bool(safe_decision.get("accepted")) else "rejected"
+        row.reason = str(safe_decision.get("reason", ""))
+        row.decision_json = json.dumps(safe_decision, ensure_ascii=False, default=str)
+        row.decided_at = datetime.utcnow()
+
+    def add_promotion_gate_record(self, *, decision: dict) -> None:
+        safe_decision = redact_sensitive(dict(decision or {}))
+        row = PromotionGateRecord(
+            strategy_name=str(safe_decision.get("strategy_name", "")),
+            strategy_version=str(safe_decision.get("strategy_version", "")),
+            paper_days=int(safe_decision.get("paper_days") or 0),
+            paper_trades=int(safe_decision.get("paper_trades") or 0),
+            max_drawdown=float(safe_decision.get("max_drawdown") or 0.0),
+            accepted=bool(safe_decision.get("accepted")),
+            reason=str(safe_decision.get("reason", "")),
+            blocking_reasons_json=json.dumps(list(safe_decision.get("blocking_reasons") or []), ensure_ascii=False),
+            decision_json=json.dumps(safe_decision, ensure_ascii=False, default=str),
+        )
+        self.session.add(row)
+
+    def add_reconciliation_record(self, *, result: dict) -> None:
+        safe_result = redact_sensitive(dict(result or {}))
+        row = ReconciliationRecord(
+            matched=bool(safe_result.get("matched")),
+            cash_diff=float(safe_result.get("cash_diff") or 0.0),
+            blocking_reasons_json=json.dumps(list(safe_result.get("blocking_reasons") or []), ensure_ascii=False),
+            result_json=json.dumps(safe_result, ensure_ascii=False, default=str),
+            checked_at=self._parse_datetime(safe_result.get("checked_at")) or datetime.utcnow(),
+        )
+        self.session.add(row)
+
+    def list_recent_trading_execution_records(self, *, limit: int = 20) -> list[dict]:
+        rows = self.session.execute(
+            select(TradingExecutionRecord)
+            .order_by(TradingExecutionRecord.created_at.desc())
+            .limit(max(1, int(limit)))
+        ).scalars()
+        return [
+            {
+                "intent_id": row.intent_id,
+                "source": row.source,
+                "environment": row.environment,
+                "symbol": row.symbol,
+                "side": row.side,
+                "price": float(row.price),
+                "quantity": int(row.qty),
+                "accepted": bool(row.accepted),
+                "executed": bool(row.executed),
+                "status": row.status,
+                "reason": row.reason,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ]
+
+    def list_recent_order_preview_records(self, *, limit: int = 20) -> list[dict]:
+        rows = self.session.execute(
+            select(OrderPreviewRecord).order_by(OrderPreviewRecord.created_at.desc()).limit(max(1, int(limit)))
+        ).scalars()
+        return [
+            {
+                "preview_id": row.preview_id,
+                "intent_id": row.intent_id,
+                "strategy_name": row.strategy_name,
+                "strategy_version": row.strategy_version,
+                "signal_id": row.signal_id,
+                "symbol": row.symbol,
+                "side": row.side,
+                "price": float(row.price),
+                "quantity": int(row.qty),
+                "estimated_total_cost": float(row.estimated_total_cost),
+                "available_cash": float(row.available_cash) if row.available_cash is not None else None,
+                "position_before": int(row.position_before),
+                "status": row.status,
+                "reason": row.reason,
+                "expires_at": row.expires_at.isoformat() if row.expires_at else None,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ]
+
+    def list_recent_promotion_gate_records(self, *, limit: int = 20) -> list[dict]:
+        rows = self.session.execute(
+            select(PromotionGateRecord).order_by(PromotionGateRecord.created_at.desc()).limit(max(1, int(limit)))
+        ).scalars()
+        return [
+            {
+                "strategy_name": row.strategy_name,
+                "strategy_version": row.strategy_version,
+                "paper_days": int(row.paper_days),
+                "paper_trades": int(row.paper_trades),
+                "max_drawdown": float(row.max_drawdown),
+                "accepted": bool(row.accepted),
+                "reason": row.reason,
+                "blocking_reasons": self._safe_json_list(row.blocking_reasons_json),
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ]
+
+    def list_recent_reconciliation_records(self, *, limit: int = 20) -> list[dict]:
+        rows = self.session.execute(
+            select(ReconciliationRecord).order_by(ReconciliationRecord.checked_at.desc()).limit(max(1, int(limit)))
+        ).scalars()
+        return [
+            {
+                "matched": bool(row.matched),
+                "cash_diff": float(row.cash_diff),
+                "blocking_reasons": self._safe_json_list(row.blocking_reasons_json),
+                "checked_at": row.checked_at.isoformat() if row.checked_at else None,
+            }
+            for row in rows
+        ]
+
+    @staticmethod
+    def _parse_datetime(value: object) -> datetime | None:
+        if isinstance(value, datetime):
+            return value
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value))
+        except ValueError:
+            return None

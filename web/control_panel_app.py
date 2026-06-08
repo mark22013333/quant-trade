@@ -1190,6 +1190,9 @@ def tw_live_account_snapshot(simulation: bool = True) -> JSONResponse:
 @app.post("/api/tw-live/order-preview")
 def tw_live_order_preview(req: StockOrderPreviewRequest) -> JSONResponse:
     try:
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
         intent = OrderIntent(
             source="web",
             environment="simulation" if req.simulation else "live",
@@ -1202,15 +1205,21 @@ def tw_live_order_preview(req: StockOrderPreviewRequest) -> JSONResponse:
             metadata={"strategy_version": req.strategy_version},
         )
         estimated_total_cost = float(req.price) * int(req.quantity) if req.side == "buy" else 0.0
-        preview = ORDER_PREVIEW_SERVICE.create_preview(
-            intent=intent,
-            estimated_total_cost=estimated_total_cost,
-            available_cash=req.available_cash,
-            position_before=int(req.position_before),
-            checks=[{"name": "web_preview", "passed": True}],
-            strategy_version=req.strategy_version,
-            signal_id=req.signal_id,
-        )
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            preview = ORDER_PREVIEW_SERVICE.create_preview(
+                intent=intent,
+                estimated_total_cost=estimated_total_cost,
+                available_cash=req.available_cash,
+                position_before=int(req.position_before),
+                checks=[{"name": "web_preview", "passed": True}],
+                strategy_version=req.strategy_version,
+                signal_id=req.signal_id,
+                repository=repo,
+            )
+            session.commit()
         return JSONResponse({"status": "ok", "data": preview.to_dict()})
     except Exception as exc:  # noqa: BLE001
         _append_log_line("tw-live-order-preview", _safe_error_text(exc))
@@ -1219,20 +1228,56 @@ def tw_live_order_preview(req: StockOrderPreviewRequest) -> JSONResponse:
 
 @app.post("/api/tw-live/promotion-gate")
 def tw_live_promotion_gate(req: PromotionGateRequest) -> JSONResponse:
-    result = PROMOTION_GATE.evaluate(
-        strategy_name=req.strategy_name,
-        strategy_version=req.strategy_version,
-        paper_days=req.paper_days,
-        paper_trades=req.paper_trades,
-        max_drawdown=req.max_drawdown,
-        slippage_report=req.slippage_report,
-        data_quality_blocked=req.data_quality_blocked,
-        reconciliation_matched=req.reconciliation_matched,
-        single_order_value=req.single_order_value,
-        daily_order_value=req.daily_order_value,
-        daily_order_count=req.daily_order_count,
-    )
-    return JSONResponse({"status": "ok", "data": result.to_dict()})
+    try:
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            result = PROMOTION_GATE.evaluate(
+                strategy_name=req.strategy_name,
+                strategy_version=req.strategy_version,
+                paper_days=req.paper_days,
+                paper_trades=req.paper_trades,
+                max_drawdown=req.max_drawdown,
+                slippage_report=req.slippage_report,
+                data_quality_blocked=req.data_quality_blocked,
+                reconciliation_matched=req.reconciliation_matched,
+                single_order_value=req.single_order_value,
+                daily_order_value=req.daily_order_value,
+                daily_order_count=req.daily_order_count,
+                repository=repo,
+            )
+            session.commit()
+        return JSONResponse({"status": "ok", "data": result.to_dict()})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("tw-live-promotion-gate", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.get("/api/tw-live/audit")
+def tw_live_audit(limit: int = 20) -> JSONResponse:
+    try:
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            safe_limit = max(1, min(100, int(limit)))
+            data = {
+                "executions": repo.list_recent_trading_execution_records(limit=safe_limit),
+                "previews": repo.list_recent_order_preview_records(limit=safe_limit),
+                "promotion_gates": repo.list_recent_promotion_gate_records(limit=safe_limit),
+                "reconciliations": repo.list_recent_reconciliation_records(limit=safe_limit),
+            }
+        return JSONResponse({"status": "ok", "data": redact_sensitive(data)})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("tw-live-audit", _safe_error_text(exc))
+        return _safe_error_response()
 
 
 @app.get("/api/finmind/usage")

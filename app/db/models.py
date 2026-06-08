@@ -205,6 +205,57 @@ class TradingExecutionRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class OrderPreviewRecord(Base):
+    __tablename__ = "order_preview_records"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    preview_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    intent_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    strategy_name: Mapped[str] = mapped_column(String(80), default="", index=True)
+    strategy_version: Mapped[str] = mapped_column(String(80), default="")
+    signal_id: Mapped[str] = mapped_column(String(80), default="", index=True)
+    symbol: Mapped[str] = mapped_column(String(20), index=True)
+    side: Mapped[str] = mapped_column(String(10))
+    price: Mapped[float] = mapped_column(Float)
+    qty: Mapped[int] = mapped_column(Integer, default=0)
+    estimated_total_cost: Mapped[float] = mapped_column(Float, default=0.0)
+    available_cash: Mapped[float | None] = mapped_column(Float, nullable=True)
+    position_before: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="created", index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    preview_json: Mapped[str] = mapped_column(Text, default="{}")
+    decision_json: Mapped[str] = mapped_column(Text, default="{}")
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PromotionGateRecord(Base):
+    __tablename__ = "promotion_gate_records"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    strategy_name: Mapped[str] = mapped_column(String(80), default="", index=True)
+    strategy_version: Mapped[str] = mapped_column(String(80), default="", index=True)
+    paper_days: Mapped[int] = mapped_column(Integer, default=0)
+    paper_trades: Mapped[int] = mapped_column(Integer, default=0)
+    max_drawdown: Mapped[float] = mapped_column(Float, default=0.0)
+    accepted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    blocking_reasons_json: Mapped[str] = mapped_column(Text, default="[]")
+    decision_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ReconciliationRecord(Base):
+    __tablename__ = "reconciliation_records"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    matched: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    cash_diff: Mapped[float] = mapped_column(Float, default=0.0)
+    blocking_reasons_json: Mapped[str] = mapped_column(Text, default="[]")
+    result_json: Mapped[str] = mapped_column(Text, default="{}")
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class PortfolioSnapshot(Base):
     __tablename__ = "portfolio_snapshots"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
