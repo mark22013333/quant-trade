@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from app.backtest.costs import estimate_buy_cost_breakdown, estimate_sell_proceeds_breakdown
 from config.settings import DEFAULT_SETTINGS
 from utils.signals import add_signal_from_position, sanitize_position
 from .broker_interface import BrokerInterface
@@ -46,6 +47,7 @@ class PaperBroker(BrokerInterface):
         """
         settings = settings or DEFAULT_SETTINGS.get('BACKTEST', {})
         commission_rate = settings.get('COMMISSION_RATE', 0.0)
+        min_commission_fee = settings.get('MIN_COMMISSION_FEE', 20.0)
         tax_rate = settings.get('TAX_RATE', 0.0)
         slippage = settings.get('SLIPPAGE', 0.0)
 
@@ -58,7 +60,18 @@ class PaperBroker(BrokerInterface):
                 'sharpe': 0.0,
                 'cagr': 0.0,
                 'win_rate': 0.0,
-                'trade_count': 0
+                'trade_count': 0,
+                'cost_breakdown': {
+                    'buy_fee_total': 0.0,
+                    'sell_fee_total': 0.0,
+                    'sell_tax_total': 0.0,
+                    'slippage_buy_total': 0.0,
+                    'slippage_sell_total': 0.0,
+                    'gross_buy_value': 0.0,
+                    'gross_sell_value': 0.0,
+                },
+                'fill_rejects': pd.DataFrame(),
+                'data_quality_summary': {}
             }
 
         df = df.copy()
@@ -79,6 +92,15 @@ class PaperBroker(BrokerInterface):
 
         equity_curve = []
         trade_log = []
+        cost_breakdown = {
+            'buy_fee_total': 0.0,
+            'sell_fee_total': 0.0,
+            'sell_tax_total': 0.0,
+            'slippage_buy_total': 0.0,
+            'slippage_sell_total': 0.0,
+            'gross_buy_value': 0.0,
+            'gross_sell_value': 0.0,
+        }
 
         for idx, row in df.iterrows():
             price = float(row['Close'])
@@ -91,8 +113,13 @@ class PaperBroker(BrokerInterface):
                 buy_qty = int(self.cash // effective_buy_price)
                 if buy_qty > 0:
                     gross = buy_price * buy_qty
-                    fees = gross * commission_rate
-                    total_cost = gross + fees
+                    buy_cost = estimate_buy_cost_breakdown(
+                        order_value=gross,
+                        fee_rate=commission_rate,
+                        min_fee=min_commission_fee,
+                    )
+                    fees = float(buy_cost['fee'])
+                    total_cost = float(buy_cost['total_cost'])
                     if self.cash >= total_cost:
                         self.cash -= total_cost
                         position_qty += buy_qty
@@ -111,14 +138,24 @@ class PaperBroker(BrokerInterface):
                             'tax': 0.0,
                             'cash_after': self.cash
                         })
+                        cost_breakdown['buy_fee_total'] += fees
+                        cost_breakdown['gross_buy_value'] += gross
+                        cost_breakdown['slippage_buy_total'] += max((buy_price - price) * buy_qty, 0.0)
 
             elif signal < 0 and position_qty > 0:
                 sell_price = price * (1 - slippage)
                 gross = sell_price * position_qty
-                fees = gross * commission_rate
-                tax = gross * tax_rate
-                self.cash += gross - fees - tax
-                pnl = gross - fees - tax - entry_value - entry_fees
+                sell_cost = estimate_sell_proceeds_breakdown(
+                    order_value=gross,
+                    fee_rate=commission_rate,
+                    min_fee=min_commission_fee,
+                    tax_rate=tax_rate,
+                )
+                fees = float(sell_cost['fee'])
+                tax = float(sell_cost['tax'])
+                net_proceeds = float(sell_cost['net_proceeds'])
+                self.cash += net_proceeds
+                pnl = net_proceeds - entry_value - entry_fees
                 pnl_pct = pnl / (entry_value + entry_fees) if (entry_value + entry_fees) > 0 else 0.0
                 holding_days = (idx - entry_date).days if entry_date is not None else None
 
@@ -135,6 +172,10 @@ class PaperBroker(BrokerInterface):
                     'holding_days': holding_days,
                     'cash_after': self.cash
                 })
+                cost_breakdown['sell_fee_total'] += fees
+                cost_breakdown['sell_tax_total'] += tax
+                cost_breakdown['gross_sell_value'] += gross
+                cost_breakdown['slippage_sell_total'] += max((price - sell_price) * position_qty, 0.0)
 
                 position_qty = 0
                 self.positions[symbol] = 0
@@ -177,7 +218,10 @@ class PaperBroker(BrokerInterface):
             'sharpe': sharpe,
             'cagr': cagr,
             'win_rate': win_rate,
-            'trade_count': int(len(closed_trades))
+            'trade_count': int(len(closed_trades)),
+            'cost_breakdown': cost_breakdown,
+            'fill_rejects': pd.DataFrame(),
+            'data_quality_summary': {},
         }
 
     def get_trade_log(self):

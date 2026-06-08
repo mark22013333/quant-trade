@@ -32,7 +32,8 @@ class FinMindProvider:
     DEALER_KEYS = ("Dealer", "自營商")
 
     def __init__(self, config: FinMindConfig | None = None):
-        self.config = config or FinMindConfig(token=os.getenv("FINMIND_TOKEN"))
+        token = os.getenv("FINMIND_API_KEY") or os.getenv("FINMIND_TOKEN")
+        self.config = config or FinMindConfig(token=token)
 
     def _request_dataset(self, dataset: str, data_id: str, start_date: str, end_date: str) -> pd.DataFrame:
         params = {

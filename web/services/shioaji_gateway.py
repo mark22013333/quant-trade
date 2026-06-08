@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Sequence
 
 from dotenv import load_dotenv
 
+from app.broker.shioaji_gateway import ShioajiGateway as CoreShioajiGateway
+
 
 class ShioajiGatewayError(RuntimeError):
     """Base error for gateway level failures."""
@@ -312,24 +314,4 @@ class ShioajiGateway:
 
     @classmethod
     def serialize(cls, obj):
-        if obj is None:
-            return None
-        if isinstance(obj, (str, int, float, bool)):
-            return obj
-        if isinstance(obj, list):
-            return [cls.serialize(item) for item in obj]
-        if isinstance(obj, tuple):
-            return [cls.serialize(item) for item in obj]
-        if isinstance(obj, dict):
-            return {key: cls.serialize(value) for key, value in obj.items()}
-        if hasattr(obj, "_asdict"):
-            try:
-                return cls.serialize(obj._asdict())
-            except Exception:
-                return str(obj)
-        if hasattr(obj, "__dict__"):
-            try:
-                return cls.serialize(vars(obj))
-            except Exception:
-                return str(obj)
-        return str(obj)
+        return CoreShioajiGateway._serialize(obj)

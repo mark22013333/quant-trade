@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -7,6 +8,8 @@ import pandas as pd
 from data.chip_data_provider import ChipDataProvider
 from data.market_data import MarketData
 from data.providers.yfinance_provider import YFinanceProvider
+
+logger = logging.getLogger(__name__)
 
 
 class DataFacade:
@@ -56,16 +59,22 @@ class DataFacade:
             raise ValueError(f"OHLCV missing columns: {', '.join(missing)}")
 
         output = ohlcv.copy()
+        chip_status = pd.Series("not_applicable", index=output.index, dtype="object")
 
         if include_chip and str(market).upper() == "TW":
+            chip_status[:] = "missing"
             try:
                 chip = self.chip_provider.load_chip_features(symbol, start_date, end_date)
                 if chip is not None and not chip.empty:
                     chip = self._normalize_index(chip)
+                    chip_status[:] = "degraded"
+                    chip_status.loc[chip.index.intersection(output.index)] = "ok"
                     output = output.join(chip, how="left")
+                else:
+                    logger.warning("chip data empty: symbol=%s range=%s~%s", symbol, start_date, end_date)
             except Exception:
-                # Keep strategy pipeline available even when external chip API is unavailable.
-                pass
+                chip_status[:] = "degraded"
+                logger.exception("chip data degraded: symbol=%s range=%s~%s", symbol, start_date, end_date)
 
         for col in ("Foreign_Net_Buy", "InvestmentTrust_Net_Buy", "Dealer_Net_Buy"):
             if col not in output.columns:
@@ -74,6 +83,6 @@ class DataFacade:
         if "Chip_Concentration_Proxy" not in output.columns:
             output["Chip_Concentration_Proxy"] = 0.0
         output["Chip_Concentration_Proxy"] = pd.to_numeric(output["Chip_Concentration_Proxy"], errors="coerce").ffill().fillna(0.0)
+        output["chip_data_status"] = chip_status.astype(str)
 
         return output
-

@@ -51,6 +51,9 @@ def test_strategy_workflow_service_runs_backtest():
     assert isinstance(result["recent_signals"], list)
     assert isinstance(result["trade_log"], list)
     assert isinstance(result["equity_curve"], list)
+    assert "cost_breakdown" in result
+    assert "fill_rejects" in result
+    assert "data_quality_summary" in result
     assert result["metrics"]["trade_count"] >= 1
 
 
@@ -61,6 +64,17 @@ def test_strategy_workflow_service_no_data():
     result = service.run_multi_strategy_backtest(cfg)
     assert result["passed"] is False
     assert result["error"] == "no_data"
+
+
+def test_strategy_workflow_service_invalid_config():
+    facade = StubDataFacade(make_service_df())
+    service = StrategyWorkflowService(data_facade=facade)
+    cfg = StrategyRunConfig(symbol="2330.TW", market="TW", enabled={"bad_strategy": True})
+
+    result = service.run_multi_strategy_backtest(cfg)
+
+    assert result["passed"] is False
+    assert result["error"] == "invalid_config"
 
 
 def test_strategy_workflow_service_export_artifacts(tmp_path):
@@ -77,3 +91,4 @@ def test_strategy_workflow_service_export_artifacts(tmp_path):
         path = tmp_path / filename
         assert path.exists()
         assert path.is_file()
+    assert "fill_rejects_csv" in export["files"]

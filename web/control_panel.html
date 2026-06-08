@@ -23,9 +23,139 @@
         <span class="tag">共用風控規則</span>
         <span class="tag">Shioaji 模擬/正式檢核</span>
       </div>
+      <div class="hero-ops">
+        <button class="hero-op-btn" data-quick-action="invest-pipeline" data-quick-tab="pipeline">一鍵產生候選股</button>
+        <button class="hero-op-btn" data-quick-tab="guide">查看完整操作指南</button>
+        <button class="hero-op-btn" data-quick-action="paper-ledger" data-quick-tab="automation">一鍵模擬本金帳本</button>
+        <button class="hero-op-btn" data-quick-action="shioaji-simulation-suite" data-quick-tab="shioaji">一鍵模擬交易測試</button>
+        <button class="hero-op-btn" data-quick-action="account-balance" data-quick-tab="account">查詢帳戶餘額</button>
+        <button class="hero-op-btn" data-quick-action="strategy-backtest" data-quick-tab="strategy">執行策略回測</button>
+      </div>
     </header>
 
-    <section class="section">
+    <div class="workspace-shell">
+      <aside class="workspace-sidebar">
+        <div class="sidebar-title">Admin Navigation</div>
+        <div class="sidebar-subtitle">用頁籤切換模組，降低資訊干擾。</div>
+        <nav class="tab-nav" aria-label="主功能頁籤">
+          <button type="button" class="tab-btn active" data-tab-target="pipeline">一鍵候選精靈</button>
+          <button type="button" class="tab-btn" data-tab-target="strategy">策略工作台</button>
+          <button type="button" class="tab-btn" data-tab-target="guide">使用指南</button>
+          <button type="button" class="tab-btn" data-tab-target="shioaji">交易測試</button>
+          <button type="button" class="tab-btn" data-tab-target="account">帳戶資訊</button>
+          <button type="button" class="tab-btn" data-tab-target="automation">快速動作</button>
+          <button type="button" class="tab-btn" data-tab-target="logs">執行紀錄</button>
+          <button type="button" class="tab-btn" data-tab-target="reports">報表中心</button>
+        </nav>
+        <div class="sidebar-hint">
+          每個測試區塊都保留可讀化卡片與原始 JSON，切換頁籤不會中斷執行中任務。
+        </div>
+      </aside>
+
+      <main class="workspace-main">
+    <section class="section tab-panel active" data-tab-panel="pipeline">
+      <h2 class="section-title">One-Click Candidate Wizard</h2>
+      <div class="guide-intro" style="margin-bottom:10px;">
+        兩步內完成：設定交易日與候選檔數，按下「一鍵產生候選股」。流程會自動同步資料、重建特徵、評分排序並輸出 5~10 檔可投資/波段候選。
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>一鍵設定</h3>
+          <div class="form-grid three">
+            <label>交易日
+              <input type="date" id="pipeline-trade-date" />
+            </label>
+            <label>目標檔數（5~10）
+              <input type="number" id="pipeline-target-count" value="8" min="5" max="10" />
+            </label>
+            <label>雷達檔數（10~20）
+              <input type="number" id="radar-target-count" value="15" min="10" max="20" />
+            </label>
+            <label>風格
+              <select id="pipeline-risk-profile">
+                <option value="balanced" selected>balanced（平衡型）</option>
+                <option value="aggressive">aggressive（積極型）</option>
+              </select>
+            </label>
+            <label>市場池
+              <select id="pipeline-universe">
+                <option value="twse_tpex" selected>上市 + 上櫃（TWSE + TPEX）</option>
+              </select>
+            </label>
+            <label class="checkbox-line" style="margin-top:25px;">
+              <input type="checkbox" id="pipeline-freshness" checked />要求資料新鮮度（最近 3 天內有日線）
+            </label>
+            <label style="grid-column: 1 / -1;">自訂觀察池（逗號分隔；空白=上市+上櫃全市場）
+              <input type="text" id="pipeline-symbols" value="3481,2409,2344,2883,3576,6443,1326,2367,8150,2337" />
+            </label>
+          </div>
+          <div class="action-row">
+            <button class="action-btn" data-action="invest-pipeline">一鍵產生候選股</button>
+            <div class="progress"><span data-progress="invest-pipeline"></span></div>
+            <div class="status" data-status="invest-pipeline"></div>
+            <div class="result" data-result="invest-pipeline"></div>
+          </div>
+          <div class="action-row">
+            <button class="action-btn secondary" data-action="daily-radar">每日雷達（10~20 檔 + 標籤）</button>
+            <div class="progress"><span data-progress="daily-radar"></span></div>
+            <div class="status" data-status="daily-radar"></div>
+            <div class="result" data-result="daily-radar"></div>
+          </div>
+          <div class="pipeline-timeline" id="pipeline-step-timeline">
+            <div class="pipeline-step" data-step="1">
+              <div class="pipeline-step-title">Step 1</div>
+              <div class="pipeline-step-text">同步核心市場資料</div>
+            </div>
+            <div class="pipeline-step" data-step="2">
+              <div class="pipeline-step-title">Step 2</div>
+              <div class="pipeline-step-text">同步擴展籌碼資料</div>
+            </div>
+            <div class="pipeline-step" data-step="3">
+              <div class="pipeline-step-title">Step 3</div>
+              <div class="pipeline-step-text">重建特徵</div>
+            </div>
+            <div class="pipeline-step" data-step="4">
+              <div class="pipeline-step-title">Step 4</div>
+              <div class="pipeline-step-text">評分排序與候選輸出</div>
+            </div>
+          </div>
+          <div class="inline-controls">
+            <button class="ghost-btn" id="refresh-pipeline-runs">更新流程紀錄</button>
+            <button class="ghost-btn" id="refresh-latest-candidates">更新最新候選</button>
+            <button class="ghost-btn" id="refresh-radar-candidates">更新每日雷達</button>
+            <button class="ghost-btn" id="refresh-watch-pool">更新觀察池</button>
+            <button class="ghost-btn" id="to-advanced-mode">切到進階模式</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>候選結果（Top 5~10）</h3>
+          <div id="pipeline-candidate-cards" class="pipeline-candidate-grid">
+            <div class="result-empty">尚未執行一鍵流程</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:12px;">
+        <div class="card">
+          <h3>每日雷達（10~20）</h3>
+          <div id="radar-candidate-cards" class="pipeline-candidate-grid">
+            <div class="result-empty">尚未執行每日雷達</div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>今日觀察池（Ready / Watch）</h3>
+          <div class="table-wrap" id="watch-pool-table"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px;">
+        <h3>一鍵流程紀錄</h3>
+        <div class="table-wrap" id="pipeline-run-history"></div>
+      </div>
+    </section>
+
+    <section class="section tab-panel" data-tab-panel="strategy" hidden>
       <h2 class="section-title">Multi-Strategy Workbench</h2>
       <div class="workbench-grid">
         <div class="panel">
@@ -141,6 +271,16 @@
           </div>
 
           <div class="panel" style="margin-top:10px; padding:10px;">
+            <h3>成本分解（回測可信度）</h3>
+            <div id="strategy-cost-breakdown" class="result-empty">尚未執行回測</div>
+          </div>
+
+          <div class="panel" style="margin-top:10px; padding:10px;">
+            <h3>成交拒絕與資料品質</h3>
+            <div id="strategy-quality-summary" class="result-empty">尚未執行回測</div>
+          </div>
+
+          <div class="panel" style="margin-top:10px; padding:10px;">
             <h3>近期訊號</h3>
             <div class="table-wrap" id="signal-table-wrap"></div>
           </div>
@@ -153,7 +293,7 @@
       </div>
     </section>
 
-    <section class="section">
+    <section class="section tab-panel" data-tab-panel="shioaji" hidden>
       <h2 class="section-title">Shioaji 交易測試中心</h2>
       <div class="inline-controls">
         <label class="checkbox-line"><input type="checkbox" id="trade-sim" checked />使用模擬環境（simulation=True）</label>
@@ -243,7 +383,7 @@
       </div>
     </section>
 
-    <section class="section">
+    <section class="section tab-panel" data-tab-panel="account" hidden>
       <h2 class="section-title">帳戶資訊</h2>
       <div class="inline-controls">
         <label class="checkbox-line"><input type="checkbox" id="account-sim" />使用模擬帳戶</label>
@@ -297,9 +437,145 @@
       </div>
     </section>
 
-    <section class="section">
+    <section class="section tab-panel" data-tab-panel="automation" hidden>
       <h2 class="section-title">快速動作</h2>
       <div class="grid-3">
+        <div class="card">
+          <h3>FinMind API 用量監控</h3>
+          <p>檢查目前 API 請求上限、已用次數與剩餘額度，避免同步流程因配額耗盡而中斷。</p>
+          <div class="quota-state" id="finmind-usage-state">尚未讀取</div>
+          <div class="quota-grid">
+            <div class="quota-item">
+              <div class="quota-label">已用請求</div>
+              <div class="quota-value" id="finmind-usage-count">-</div>
+            </div>
+            <div class="quota-item">
+              <div class="quota-label">請求上限</div>
+              <div class="quota-value" id="finmind-usage-limit">-</div>
+            </div>
+            <div class="quota-item">
+              <div class="quota-label">剩餘可用</div>
+              <div class="quota-value" id="finmind-usage-remaining">-</div>
+            </div>
+          </div>
+          <div class="quota-bar">
+            <span id="finmind-usage-bar" class="quota-bar-fill"></span>
+          </div>
+          <div class="quota-meta" id="finmind-usage-meta">點擊更新用量以讀取最新資訊</div>
+          <div class="inline-controls">
+            <button class="ghost-btn" id="refresh-finmind-usage">更新用量</button>
+            <label class="checkbox-line"><input type="checkbox" id="finmind-auto-refresh" checked />每 60 秒自動更新</label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>市場資料同步（Sponsor）</h3>
+          <p>同步日線、法人買賣超、分點聚合、處置股票資料，供回測/訊號/實盤共用。</p>
+          <div class="form-grid three">
+            <label>同步開始日
+              <input type="date" id="sync-start" />
+            </label>
+            <label>同步結束日
+              <input type="date" id="sync-end" />
+            </label>
+            <label>股票清單（逗號）
+              <input type="text" id="sync-symbols" placeholder="2330,2317,2454（空白=0050）" />
+            </label>
+          </div>
+          <div class="inline-controls">
+            <label class="checkbox-line"><input type="checkbox" id="sync-bars" checked />日線</label>
+            <label class="checkbox-line"><input type="checkbox" id="sync-chip" checked />法人買賣超</label>
+            <label class="checkbox-line"><input type="checkbox" id="sync-broker-agg" checked />分點聚合</label>
+            <label class="checkbox-line"><input type="checkbox" id="sync-disposition" checked />處置股票</label>
+          </div>
+          <button class="action-btn" data-action="data-sync">執行市場資料同步</button>
+          <div class="progress"><span data-progress="data-sync"></span></div>
+          <div class="status" data-status="data-sync"></div>
+          <div class="result" data-result="data-sync"></div>
+        </div>
+
+        <div class="card">
+          <h3>資料健康度檢查</h3>
+          <p>快速檢查指定標的在本地資料庫中的日線、籌碼、處置與特徵覆蓋。</p>
+          <div class="form-grid three">
+            <label>檢查標的
+              <input type="text" id="health-symbol" value="2330" />
+            </label>
+          </div>
+          <div class="inline-controls">
+            <button class="ghost-btn" id="refresh-data-health">檢查資料健康度</button>
+          </div>
+          <div class="result" id="data-health-result">
+            <div class="result-empty">尚未檢查</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>特徵快照重建</h3>
+          <p>重建 MA60 / RSI3 / KD / ATR / 籌碼5日累計 / 處置狀態等統一特徵。</p>
+          <div class="form-grid three">
+            <label>重建開始日
+              <input type="date" id="feature-start" />
+            </label>
+            <label>重建結束日
+              <input type="date" id="feature-end" />
+            </label>
+            <label>股票清單（逗號）
+              <input type="text" id="feature-symbols" placeholder="2330,2317（空白=0050）" />
+            </label>
+          </div>
+          <button class="action-btn secondary" data-action="feature-rebuild">重建特徵快照</button>
+          <div class="progress"><span data-progress="feature-rebuild"></span></div>
+          <div class="status" data-status="feature-rebuild"></div>
+          <div class="result" data-result="feature-rebuild"></div>
+        </div>
+
+        <div class="card">
+          <h3>訊號預覽（含籌碼/處置）</h3>
+          <p>可設定排序邏輯、持倉上限、資料新鮮度與籌碼門檻模式，模擬每日實際選股順序。</p>
+          <div class="form-grid three">
+            <label>交易日
+              <input type="date" id="signal-trade-date" />
+            </label>
+            <label>交易日模式
+              <select id="signal-trade-date-mode">
+                <option value="T" selected>當日 (T)</option>
+                <option value="T-1">前一交易日 (T-1)</option>
+              </select>
+            </label>
+            <label>可用本金
+              <input type="number" id="signal-cash" value="10000" min="1000" step="1000" />
+            </label>
+            <label>掃描檔數上限
+              <input type="number" id="signal-max-symbols" value="50" min="1" max="300" />
+            </label>
+            <label>排序方式
+              <select id="signal-rank-by">
+                <option value="score" selected>score（綜合分數）</option>
+                <option value="risk_adjusted_score">risk_adjusted_score（風險調整）</option>
+              </select>
+            </label>
+            <label>最大持倉檔數（選填）
+              <input type="number" id="signal-max-open-positions" min="1" max="30" placeholder="空白=不限制" />
+            </label>
+            <label>籌碼門檻模式
+              <select id="signal-chip-threshold-mode">
+                <option value="absolute" selected>absolute（固定門檻）</option>
+                <option value="zscore">zscore（相對強度）</option>
+              </select>
+            </label>
+          </div>
+          <div class="inline-controls">
+            <label class="checkbox-line"><input type="checkbox" id="signal-require-chip" checked />要求籌碼條件</label>
+            <label class="checkbox-line"><input type="checkbox" id="signal-block-disposition" checked />封鎖處置股票</label>
+            <label class="checkbox-line"><input type="checkbox" id="signal-data-freshness-required" checked />要求資料新鮮度（last_bar_date >= trade_date）</label>
+          </div>
+          <button class="action-btn secondary" data-action="signal-preview">執行訊號預覽</button>
+          <div class="progress"><span data-progress="signal-preview"></span></div>
+          <div class="status" data-status="signal-preview"></div>
+          <div class="result" data-result="signal-preview"></div>
+        </div>
+
         <div class="card">
           <h3>短期投資 Dashboard</h3>
           <p>重新計算短期排名，產生 Top20 HTML 與 CSV。</p>
@@ -339,6 +615,36 @@
         </div>
 
         <div class="card">
+          <h3>模擬本金帳本</h3>
+          <p>用 T+2 結算 + 手續費/稅金模擬資金變化，輸出 HTML/CSV/JSON 報表。</p>
+          <div class="form-grid three">
+            <label>股票代號
+              <input type="text" id="paper-symbol" value="2330" />
+            </label>
+            <label>開始日期
+              <input type="date" id="paper-start" />
+            </label>
+            <label>結束日期
+              <input type="date" id="paper-end" />
+            </label>
+            <label>模擬本金
+              <input type="number" id="paper-cash" value="10000" min="1000" step="1000" />
+            </label>
+            <label>持倉天數上限
+              <input type="number" id="paper-hold" value="5" min="1" max="20" />
+            </label>
+            <label>交割天數 (T+n)
+              <input type="number" id="paper-settlement" value="2" min="1" max="5" />
+            </label>
+          </div>
+          <label class="checkbox-line"><input type="checkbox" id="paper-force-close" checked />期末強制平倉（便於看完整績效）</label>
+          <button class="action-btn secondary" data-action="paper-ledger">產生模擬帳本</button>
+          <div class="progress"><span data-progress="paper-ledger"></span></div>
+          <div class="status" data-status="paper-ledger"></div>
+          <div class="result" data-result="paper-ledger"></div>
+        </div>
+
+        <div class="card">
           <h3>Shioaji AI 協作中心</h3>
           <p>同步官方 llms 文件並生成 AI 協作中心頁面。</p>
           <label class="checkbox-line"><input type="checkbox" id="ai-force" />強制重新同步文件</label>
@@ -349,7 +655,96 @@
       </div>
     </section>
 
-    <section class="section">
+    <section class="section tab-panel" data-tab-panel="guide" hidden>
+      <h2 class="section-title">操作指南（完整流程）</h2>
+      <p class="guide-intro">
+        這份頁面是給實際操作用的流程手冊。你可以直接照下面順序執行，從資料同步、策略回測、訊號排序、資金配置，到下單前安全檢核都在同一套流程內完成。
+      </p>
+
+      <div class="guide-grid">
+        <article class="guide-card">
+          <h3>1) 每日標準流程（建議）</h3>
+          <ol class="guide-steps">
+            <li><strong>同步資料：</strong>到「快速動作」執行「市場資料同步」與「特徵快照重建」，再做「資料健康度檢查」。</li>
+            <li><strong>先看回測：</strong>到「策略工作台」跑一次回測，確認總報酬、最大回撤、交易筆數是否合理。</li>
+            <li><strong>看成本真實度：</strong>確認「成本分解」中的買/賣手續費、稅、滑價都有值，避免只看淨績效。</li>
+            <li><strong>看風險暴露：</strong>確認「成交拒絕與資料品質」中的 fill rejects 與 stale/degraded 狀態。</li>
+            <li><strong>再看選股：</strong>在「訊號預覽」設定 `rank_by`、`max_open_positions`、`chip_threshold_mode` 後再執行。</li>
+            <li><strong>最後才做交易測試：</strong>先跑 Shioaji 模擬整套測試，通過後才考慮正式環境。</li>
+          </ol>
+        </article>
+
+        <article class="guide-card">
+          <h3>2) 策略工作台怎麼調</h3>
+          <ul class="guide-list">
+            <li><strong>權重：</strong>A/B/C 權重建議總和接近 `1.0`，避免單一策略過度主導。</li>
+            <li><strong>投票門檻：</strong>越高越保守，訊號變少但通常更乾淨。</li>
+            <li><strong>風控：</strong>`停損` + `ATR 倍數` + `移動停利` 共同決定離場，避免只靠單一規則。</li>
+            <li><strong>成本設定：</strong>手續費/稅/滑價需貼近真實交易條件，才能判斷策略是否可落地。</li>
+          </ul>
+          <div class="guide-note">
+            你看到的回測摘要已加入：`cost_breakdown`、`fill_rejects`、`data_quality_summary`，這三個欄位是判斷「可不可以進實盤」的核心。
+          </div>
+        </article>
+
+        <article class="guide-card">
+          <h3>3) 訊號預覽進階參數</h3>
+          <div class="guide-table-wrap">
+            <table class="guide-table">
+              <thead>
+                <tr>
+                  <th>欄位</th>
+                  <th>用途</th>
+                  <th>建議</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>交易日模式</td>
+                  <td>`T` 用今天，`T-1` 用前一日資料</td>
+                  <td>資料晚到時先用 `T-1`</td>
+                </tr>
+                <tr>
+                  <td>排序方式</td>
+                  <td>`score` 或 `risk_adjusted_score`</td>
+                  <td>先用 `risk_adjusted_score`</td>
+                </tr>
+                <tr>
+                  <td>最大持倉檔數</td>
+                  <td>限制當次最多進場檔數</td>
+                  <td>建議先設 `3~5`</td>
+                </tr>
+                <tr>
+                  <td>要求資料新鮮度</td>
+                  <td>只允許 `last_bar_date >= trade_date`</td>
+                  <td>正式流程建議打開</td>
+                </tr>
+                <tr>
+                  <td>籌碼門檻模式</td>
+                  <td>`absolute` 或 `zscore`</td>
+                  <td>跨標的建議先試 `zscore`</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="guide-card">
+          <h3>4) 結果判讀與動作</h3>
+          <ul class="guide-list">
+            <li><strong>fill_rejects 持續偏高：</strong>代表成交假設過度樂觀，先收斂標的或提高流動性門檻。</li>
+            <li><strong>data_quality 出現 stale/degraded：</strong>先補資料再評估，不要直接下單。</li>
+            <li><strong>回測勝率高但成本重：</strong>優先檢查小資金交易是否被手續費吃掉。</li>
+            <li><strong>訊號很多但可買檔數少：</strong>調整 `max_open_positions` 與可用本金，不要只看建議檔數。</li>
+          </ul>
+          <div class="guide-alert">
+            真實交易請先通過「交易測試中心」的登入/證券/期貨模擬流程，再進正式環境檢核。
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section tab-panel" data-tab-panel="logs" hidden>
       <h2 class="section-title">執行紀錄</h2>
       <div class="inline-controls">
         <span>後端心跳：<span id="heartbeat">--</span></span>
@@ -360,12 +755,15 @@
       <div class="log log-secondary" id="server-log">後端 Log 尚未載入…</div>
     </section>
 
-    <section class="section">
+    <section class="section tab-panel" data-tab-panel="reports" hidden>
       <h2 class="section-title">最近報表</h2>
       <div class="card">
         <ul class="report-list" id="report-list"></ul>
       </div>
     </section>
+
+      </main>
+    </div>
 
     <div class="footer">Generated by quant-trade · control panel mode</div>
   </div>
@@ -376,10 +774,20 @@
     const reportList = document.getElementById('report-list');
     const heartbeatEl = document.getElementById('heartbeat');
     const pollers = {};
+    let finmindUsageTimer = null;
+    const TAB_STORAGE_KEY = 'quant_trade_control_tab';
+    const tabButtons = Array.from(document.querySelectorAll('[data-tab-target]'));
+    const tabPanels = Array.from(document.querySelectorAll('[data-tab-panel]'));
 
     const ACTION_LABELS = {
+      'invest-pipeline': '一鍵候選流程',
+      'daily-radar': '每日雷達',
+      'data-sync': '市場資料同步',
+      'feature-rebuild': '特徵快照重建',
+      'signal-preview': '訊號預覽',
       'strategy-backtest': '多策略回測',
       'strategy-backtest-export': '多策略回測匯出',
+      'paper-ledger': '模擬本金帳本',
       'short-term': '短期 Dashboard',
       'swing-report': '波段報表',
       'ai-assistant': 'AI 協作中心',
@@ -401,6 +809,79 @@
       done: '完成',
       error: '失敗'
     };
+
+    const RADAR_ACTION_META = {
+      ENTRY_READY: { text: '可進場', css: 'entry' },
+      WATCH_WAIT_TRIGGER: { text: '觀察中', css: 'watch' },
+      NOT_RECOMMENDED: { text: '不建議進場', css: 'avoid' }
+    };
+
+    const RADAR_STATUS_META = {
+      ready: '可進場',
+      watch: '觀察中',
+      avoid: '不建議',
+      expired: '已過期'
+    };
+
+    const RADAR_BLOCKER_META = {
+      B_DATA_STALE: { text: '資料過舊', level: 'warn' },
+      B_DISPOSITION_ACTIVE: { text: '處置期間中', level: 'danger' },
+      B_LOW_LIQUIDITY: { text: '流動性不足', level: 'warn' },
+      B_LIMIT_LOCK_RISK: { text: '鎖單風險偏高', level: 'danger' },
+      B_MISSING_CRITICAL_CHIP: { text: '籌碼資料不足', level: 'warn' }
+    };
+
+    const DATA_QUALITY_META = {
+      fresh: '新鮮',
+      stale: '過舊',
+      missing: '缺失',
+      unknown: '未知'
+    };
+
+    function setActiveTab(tabName) {
+      const fallback = tabPanels[0]?.dataset?.tabPanel;
+      const target = tabPanels.some(panel => panel.dataset.tabPanel === tabName) ? tabName : fallback;
+      if (!target) return;
+
+      tabButtons.forEach((btn) => {
+        const active = btn.dataset.tabTarget === target;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+
+      tabPanels.forEach((panel) => {
+        const active = panel.dataset.tabPanel === target;
+        panel.classList.toggle('active', active);
+        panel.hidden = !active;
+      });
+
+      if (window.location.hash !== `#${target}` && window.history?.replaceState) {
+        window.history.replaceState(null, '', `#${target}`);
+      }
+
+      try {
+        window.localStorage.setItem(TAB_STORAGE_KEY, target);
+      } catch (err) {
+        // Ignore storage failures in private mode.
+      }
+    }
+
+    function initTabs() {
+      if (tabButtons.length === 0 || tabPanels.length === 0) return;
+
+      tabButtons.forEach((btn) => {
+        btn.addEventListener('click', () => setActiveTab(btn.dataset.tabTarget));
+      });
+
+      const hashTab = window.location.hash ? window.location.hash.replace('#', '') : '';
+      let storedTab = '';
+      try {
+        storedTab = window.localStorage.getItem(TAB_STORAGE_KEY) || '';
+      } catch (err) {
+        storedTab = '';
+      }
+      setActiveTab(hashTab || storedTab || tabPanels[0].dataset.tabPanel);
+    }
 
     function actionLabel(action) {
       return ACTION_LABELS[action] || action;
@@ -443,16 +924,89 @@
       return `NT$ ${value.toLocaleString('zh-TW', { maximumFractionDigits: 0 })}`;
     }
 
+    function renderSymbolNameHtml(symbol, name) {
+      const safeSymbol = escapeHtml(symbol || '-');
+      const safeName = escapeHtml(name || '');
+      if (!safeName || safeName === safeSymbol) {
+        return `<div class="pipeline-symbol-line"><span class="pipeline-symbol">${safeSymbol}</span></div>`;
+      }
+      return `
+        <div class="pipeline-symbol-line">
+          <span class="pipeline-symbol">${safeSymbol}</span>
+          <span class="pipeline-symbol-name-inline">${safeName}</span>
+        </div>
+      `;
+    }
+
     function boolLabel(value) {
       if (value === true) return '是';
       if (value === false) return '否';
       return '未知';
     }
 
+    function radarActionMeta(actionLabel) {
+      const key = String(actionLabel || 'NOT_RECOMMENDED');
+      return RADAR_ACTION_META[key] || RADAR_ACTION_META.NOT_RECOMMENDED;
+    }
+
+    function radarStatusLabel(status) {
+      const key = String(status || '').toLowerCase();
+      return RADAR_STATUS_META[key] || (key || '-');
+    }
+
+    function radarDataQualityLabel(value) {
+      const key = String(value || 'unknown').toLowerCase();
+      return DATA_QUALITY_META[key] || key;
+    }
+
+    function radarBlockerMeta(tag) {
+      const key = String(tag || '').trim().toUpperCase();
+      return RADAR_BLOCKER_META[key] || { text: key || '未知風險', level: 'warn' };
+    }
+
+    function radarReasonLabel(tag) {
+      const text = String(tag || '').trim();
+      if (!text) return '無';
+      if (text.startsWith('PROFILE=')) {
+        const mode = text.split('=').slice(1).join('=').toLowerCase();
+        return mode === 'aggressive' ? '風格：積極型' : '風格：平衡型';
+      }
+      if (text.startsWith('TREND_OK=')) return text.endsWith('true') ? '趨勢條件通過' : '趨勢條件未通過';
+      if (text.startsWith('VOL_OK=')) return text.endsWith('true') ? '量能條件通過' : '量能條件未通過';
+      if (text.startsWith('TRIGGER=')) return text.endsWith('true') ? '觸發條件成立' : '觸發條件未成立';
+      if (text.startsWith('TRIGGER_REASON=')) {
+        const reason = text.split('=').slice(1).join('=');
+        if (reason === 'rsi3<20') return '觸發原因：RSI3 < 20';
+        if (reason === 'kd_gold_cross_below20') return '觸發原因：KD 黃金交叉（低檔）';
+        if (reason === 'none') return '觸發原因：無';
+        return `觸發原因：${reason}`;
+      }
+      if (text.startsWith('CHIP_UP3=')) return text.endsWith('true') ? '籌碼連三日增強' : '籌碼連三日未增強';
+      if (text.startsWith('ENTRY_SCORE=')) {
+        const score = text.split('=').slice(1).join('=');
+        return `進場分數：${score}`;
+      }
+      return text;
+    }
+
+    function radarRiskLightMeta(item) {
+      const actionLabel = String(item?.action_label || 'NOT_RECOMMENDED');
+      const blockers = Array.isArray(item?.blocker_tags) ? item.blocker_tags : [];
+      const riskScore = Number(item?.risk_score);
+      if (actionLabel === 'NOT_RECOMMENDED' || blockers.length > 0) {
+        return { text: '紅燈', css: 'danger', hint: '不建議進場' };
+      }
+      if (actionLabel === 'ENTRY_READY' && Number.isFinite(riskScore) && riskScore >= 0.55) {
+        return { text: '綠燈', css: 'ok', hint: '可評估分批進場' };
+      }
+      return { text: '黃燈', css: 'warn', hint: '先觀察，等待更佳觸發' };
+    }
+
     function resultStateMeta(result) {
       if (!result || typeof result !== 'object') return { text: '無結果', css: 'neutral' };
       if (result.passed === true) return { text: '通過', css: 'ok' };
       if (result.passed === false) return { text: '未通過', css: 'warn' };
+      if (result.degraded === true || result.insufficient_candidates === true) return { text: '降級完成', css: 'warn' };
       if (result.error) return { text: '異常', css: 'warn' };
       return { text: '完成', css: 'neutral' };
     }
@@ -475,9 +1029,66 @@
         rows.push(['CAGR', formatPct(m.cagr)]);
         rows.push(['勝率', formatPct(m.win_rate)]);
         rows.push(['交易筆數', String(m.trade_count ?? '-')]);
+        if (Array.isArray(backtestResult.fill_rejects)) rows.push(['成交拒絕次數', String(backtestResult.fill_rejects.length)]);
+        if (backtestResult.data_quality_summary && typeof backtestResult.data_quality_summary === 'object') {
+          const qualityText = Object.entries(backtestResult.data_quality_summary)
+            .map(([key, value]) => `${key}:${value}`)
+            .join(', ');
+          if (qualityText) rows.push(['資料品質', qualityText]);
+        }
       }
       if (action === 'strategy-backtest-export' && result.export?.files) {
         rows.push(['匯出檔案', String(Object.keys(result.export.files).length)]);
+      }
+      if (action === 'paper-ledger' && result.summary) {
+        const s = result.summary;
+        if (typeof s.initial_cash === 'number') rows.push(['初始本金', formatCurrency(s.initial_cash)]);
+        if (typeof s.final_equity === 'number') rows.push(['期末權益', formatCurrency(s.final_equity)]);
+        if (typeof s.trade_count === 'number') rows.push(['交易筆數', String(s.trade_count)]);
+        if (typeof s.total_realized_pnl === 'number') rows.push(['已實現損益', formatCurrency(s.total_realized_pnl)]);
+        if (typeof s.win_rate === 'number') rows.push(['勝率', formatPct(s.win_rate)]);
+        if (typeof s.capital_guard_ok === 'boolean') rows.push(['本金防線', boolLabel(s.capital_guard_ok)]);
+      }
+      if (action === 'data-sync') {
+        if (typeof result.rows_upserted_total === 'number') rows.push(['總寫入筆數', String(result.rows_upserted_total)]);
+        if (typeof result.partial_failure === 'boolean') rows.push(['部分失敗', boolLabel(result.partial_failure)]);
+      }
+      if (action === 'feature-rebuild') {
+        if (typeof result.rows_upserted === 'number') rows.push(['寫入筆數', String(result.rows_upserted)]);
+        if (typeof result.symbols_processed === 'number') rows.push(['完成檔數', String(result.symbols_processed)]);
+        if (typeof result.symbols_skipped === 'number') rows.push(['略過檔數', String(result.symbols_skipped)]);
+      }
+      if (action === 'signal-preview') {
+        if (typeof result.suggestions_count === 'number') rows.push(['符合條件', String(result.suggestions_count)]);
+        if (typeof result.trade_date === 'string') rows.push(['交易日', result.trade_date]);
+        if (typeof result.trade_date_mode === 'string') rows.push(['交易日模式', result.trade_date_mode]);
+        if (typeof result.rank_by === 'string') rows.push(['排序方式', result.rank_by]);
+        if (typeof result.max_open_positions === 'number') rows.push(['最大持倉檔數', String(result.max_open_positions)]);
+        if (typeof result.data_freshness_required === 'boolean') rows.push(['資料新鮮度要求', boolLabel(result.data_freshness_required)]);
+        if (typeof result.chip_threshold_mode === 'string') rows.push(['籌碼門檻模式', result.chip_threshold_mode]);
+      }
+      if (action === 'invest-pipeline') {
+        if (typeof result.trade_date === 'string') rows.push(['交易日', result.trade_date]);
+        if (typeof result.target_count === 'number') rows.push(['目標檔數', String(result.target_count)]);
+        if (Array.isArray(result.candidates)) rows.push(['候選輸出', String(result.candidates.length)]);
+        if (Array.isArray(result.symbols)) rows.push(['觀察池檔數', String(result.symbols.length)]);
+        if (typeof result.degraded === 'boolean') rows.push(['降級模式', boolLabel(result.degraded)]);
+        if (typeof result.insufficient_candidates === 'boolean') rows.push(['候選不足', boolLabel(result.insufficient_candidates)]);
+        if (typeof result.universe === 'string') rows.push(['市場池', result.universe]);
+        if (typeof result.risk_profile === 'string') rows.push(['風格', result.risk_profile]);
+      }
+      if (action === 'daily-radar') {
+        if (typeof result.trade_date === 'string') rows.push(['交易日', result.trade_date]);
+        if (typeof result.target_count === 'number') rows.push(['雷達檔數', String(result.target_count)]);
+        if (typeof result.risk_profile === 'string') rows.push(['風格', result.risk_profile]);
+        if (Array.isArray(result.items)) rows.push(['雷達輸出', String(result.items.length)]);
+        if (Array.isArray(result.symbols)) rows.push(['掃描股票池', String(result.symbols.length)]);
+        if (result.label_counts && typeof result.label_counts === 'object') {
+          rows.push(['可進場', String(result.label_counts.ENTRY_READY ?? 0)]);
+          rows.push(['觀察中', String(result.label_counts.WATCH_WAIT_TRIGGER ?? 0)]);
+          rows.push(['不建議', String(result.label_counts.NOT_RECOMMENDED ?? 0)]);
+        }
+        if (typeof result.degraded === 'boolean') rows.push(['降級模式', boolLabel(result.degraded)]);
       }
 
       if (typeof result.acc_balance === 'number') rows.push(['餘額', formatCurrency(result.acc_balance)]);
@@ -506,7 +1117,7 @@
     }
 
     function buildExportLinks(action, result) {
-      if (action !== 'strategy-backtest-export') return '';
+      if (!['strategy-backtest-export', 'paper-ledger', 'invest-pipeline', 'daily-radar'].includes(action)) return '';
       const urls = result?.export?.urls;
       if (!urls || typeof urls !== 'object') return '';
       const entries = Object.entries(urls).filter(([, url]) => typeof url === 'string' && url.length > 0);
@@ -665,9 +1276,77 @@
       summaryEl.textContent = lines.join(' | ');
     }
 
+    function renderStrategyCostBreakdown(result) {
+      const box = document.getElementById('strategy-cost-breakdown');
+      if (!box) return;
+      const cost = result?.cost_breakdown;
+      if (!cost || typeof cost !== 'object' || Object.keys(cost).length === 0) {
+        box.innerHTML = '<div class="result-empty">尚無成本分解資料</div>';
+        return;
+      }
+      const buyFee = Number(cost.buy_fee_total || 0);
+      const sellFee = Number(cost.sell_fee_total || 0);
+      const sellTax = Number(cost.sell_tax_total || 0);
+      const slippageBuy = Number(cost.slippage_buy_total || 0);
+      const slippageSell = Number(cost.slippage_sell_total || 0);
+      const totalCost = buyFee + sellFee + sellTax + slippageBuy + slippageSell;
+      const rows = [
+        ['買入手續費', formatCurrency(buyFee)],
+        ['賣出手續費', formatCurrency(sellFee)],
+        ['交易稅', formatCurrency(sellTax)],
+        ['買入滑價', formatCurrency(slippageBuy)],
+        ['賣出滑價', formatCurrency(slippageSell)],
+        ['成本合計', formatCurrency(totalCost)],
+      ];
+      box.innerHTML = `
+        <div class="result-kv-grid">
+          ${rows.map(([label, value]) => `<div class="result-kv"><div class="result-kv-label">${escapeHtml(label)}</div><div class="result-kv-value">${escapeHtml(value)}</div></div>`).join('')}
+        </div>
+      `;
+    }
+
+    function renderStrategyQualitySummary(result) {
+      const box = document.getElementById('strategy-quality-summary');
+      if (!box) return;
+      const fillRejects = Array.isArray(result?.fill_rejects) ? result.fill_rejects : [];
+      const quality = result?.data_quality_summary && typeof result.data_quality_summary === 'object'
+        ? result.data_quality_summary
+        : {};
+      const qualityRows = Object.entries(quality).map(([key, value]) => [key, String(value)]);
+      const reasonCounts = {};
+      fillRejects.forEach((item) => {
+        const reason = String(item?.reason || 'unknown');
+        reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+      });
+      const topReasons = Object.entries(reasonCounts)
+        .sort((a, b) => Number(b[1]) - Number(a[1]))
+        .slice(0, 5)
+        .map(([reason, count]) => `${reason}: ${count}`);
+
+      const headerRows = [
+        ['成交拒絕總數', String(fillRejects.length)],
+        ...qualityRows,
+      ];
+      if (headerRows.length === 0) {
+        box.innerHTML = '<div class="result-empty">尚無成交拒絕與資料品質資訊</div>';
+        return;
+      }
+      const reasonList = topReasons.length > 0
+        ? `<div class="result-title">拒絕原因分布</div><ul class="result-list">${topReasons.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+        : '<div class="result-empty">成交拒絕原因：無</div>';
+      box.innerHTML = `
+        <div class="result-kv-grid">
+          ${headerRows.map(([label, value]) => `<div class="result-kv"><div class="result-kv-label">${escapeHtml(label)}</div><div class="result-kv-value">${escapeHtml(value)}</div></div>`).join('')}
+        </div>
+        ${reasonList}
+      `;
+    }
+
     function renderStrategyWorkbench(result) {
       renderStrategyMetrics(result);
       renderStrategySummary(result);
+      renderStrategyCostBreakdown(result);
+      renderStrategyQualitySummary(result);
       drawEquityChart(result?.equity_curve || []);
       renderTable('signal-table-wrap', result?.recent_signals || [], [
         'date', 'Close', 'ensemble_score', 'entry_signal', 'active_strategies',
@@ -676,6 +1355,285 @@
       renderTable('trade-table-wrap', result?.trade_log || [], [
         'date', 'side', 'price', 'quantity', 'pnl', 'pnl_pct', 'holding_days', 'reason', 'active_strategies'
       ]);
+    }
+
+    function updatePipelineTimeline(progress = 0, state = 'idle', stepMetrics = null) {
+      const steps = Array.from(document.querySelectorAll('#pipeline-step-timeline .pipeline-step'));
+      if (steps.length === 0) return;
+      if (!stepMetrics) {
+        steps.forEach((stepEl) => {
+          const textEl = stepEl.querySelector('.pipeline-step-text');
+          if (textEl && textEl.dataset.baseText) {
+            textEl.textContent = textEl.dataset.baseText;
+          }
+        });
+      }
+      let activeStep = 1;
+      if (progress >= 82) activeStep = 4;
+      else if (progress >= 66) activeStep = 3;
+      else if (progress >= 48) activeStep = 2;
+      else activeStep = 1;
+
+      steps.forEach((stepEl, idx) => {
+        const stepNo = idx + 1;
+        stepEl.classList.remove('active', 'done', 'error');
+        if (state === 'error' && stepNo === activeStep) {
+          stepEl.classList.add('error');
+          return;
+        }
+        if (state === 'done' || stepNo < activeStep) {
+          stepEl.classList.add('done');
+          return;
+        }
+        if (stepNo === activeStep && state === 'running') {
+          stepEl.classList.add('active');
+        }
+      });
+
+      if (stepMetrics && typeof stepMetrics === 'object') {
+        const mapping = [
+          ['sync_core', 0],
+          ['sync_extended_chip', 1],
+          ['rebuild_features', 2],
+          ['score_candidates', 3],
+        ];
+        mapping.forEach(([key, idx]) => {
+          const metric = stepMetrics[key];
+          const textEl = steps[idx]?.querySelector('.pipeline-step-text');
+          if (!metric || !textEl) return;
+          const sec = Number(metric.duration_sec || 0).toFixed(1);
+          const base = textEl.dataset.baseText || textEl.textContent || '';
+          textEl.dataset.baseText = base;
+          textEl.textContent = `${base}（${sec}s）`;
+        });
+      }
+    }
+
+    function renderPipelineCandidates(candidates) {
+      const wrap = document.getElementById('pipeline-candidate-cards');
+      if (!wrap) return;
+      if (!Array.isArray(candidates) || candidates.length === 0) {
+        wrap.innerHTML = '<div class="result-empty">目前沒有可用候選，請調整交易日或稍後再試</div>';
+        return;
+      }
+      const html = candidates.map((item, idx) => {
+        const rank = Number(item.rank || idx + 1);
+        const symbolNameHtml = renderSymbolNameHtml(item.symbol || '-', item.name || '');
+        const price = typeof item.price === 'number' ? formatNumber(item.price, 2) : '-';
+        const score = typeof item.score === 'number' ? formatPct(item.score, 1) : '-';
+        const risk = typeof item.risk_score === 'number' ? formatPct(item.risk_score, 1) : '-';
+        const candidateType = String(item.candidate_type || 'watch');
+        const quality = escapeHtml(item.data_quality || 'unknown');
+        const reasons = Array.isArray(item.reason_codes) ? item.reason_codes.slice(0, 4) : [];
+        const riskFlags = Array.isArray(item.risk_flags) ? item.risk_flags : [];
+        const lastBarDate = escapeHtml(item.last_bar_date || '-');
+        return `
+          <article class="pipeline-card">
+            <div class="pipeline-card-head">
+              <div class="pipeline-rank">#${rank}</div>
+              <div class="pipeline-symbol-block">
+                ${symbolNameHtml}
+              </div>
+              <div class="pipeline-type ${candidateType === 'entry' ? 'entry' : 'watch'}">${escapeHtml(candidateType)}</div>
+            </div>
+            <div class="pipeline-score-grid">
+              <div><span>價格</span><strong>${escapeHtml(price)}</strong></div>
+              <div><span>分數</span><strong>${escapeHtml(score)}</strong></div>
+              <div><span>風險分數</span><strong>${escapeHtml(risk)}</strong></div>
+              <div><span>資料品質</span><strong>${quality}</strong></div>
+            </div>
+            <div class="pipeline-submeta">Last bar: ${lastBarDate}</div>
+            <div class="pipeline-tags">
+              ${reasons.length > 0 ? reasons.map(code => `<span class="pipeline-tag">${escapeHtml(code)}</span>`).join('') : '<span class="pipeline-tag">無理由碼</span>'}
+            </div>
+            <div class="pipeline-flags">
+              ${riskFlags.length > 0 ? riskFlags.map(flag => `<span class="pipeline-flag">${escapeHtml(flag)}</span>`).join('') : '<span class="pipeline-flag ok">risk_flags: none</span>'}
+            </div>
+          </article>
+        `;
+      }).join('');
+      wrap.innerHTML = html;
+    }
+
+    function renderPipelineRuns(rows) {
+      const mapped = (Array.isArray(rows) ? rows : []).map((item) => ({
+        run_at: item.run_at || '-',
+        trade_date: item.trade_date || '-',
+        target_count: item.target_count ?? '-',
+        output_count: item.rows_upserted ?? '-',
+        degraded: boolLabel(item.degraded),
+        insufficient_candidates: boolLabel(item.insufficient_candidates),
+        degrade_reasons: Array.isArray(item.degrade_reasons) ? item.degrade_reasons.join(' | ') : '-',
+        status: item.status || '-',
+        run_id: item.run_id || '-',
+      }));
+      renderTable('pipeline-run-history', mapped, [
+        'run_at',
+        'trade_date',
+        'target_count',
+        'output_count',
+        'degraded',
+        'insufficient_candidates',
+        'degrade_reasons',
+        'status',
+        'run_id',
+      ]);
+    }
+
+    async function refreshLatestCandidates(count = 10) {
+      const maxCount = Math.max(5, Math.min(10, Number(count || 10)));
+      try {
+        const res = await fetch(`/api/candidates/latest?count=${maxCount}`);
+        const payload = await res.json();
+        if (payload.status !== 'ok') throw new Error(payload.error || '讀取失敗');
+        renderPipelineCandidates(payload.data || []);
+      } catch (err) {
+        const wrap = document.getElementById('pipeline-candidate-cards');
+        if (wrap) {
+          wrap.innerHTML = `<div class="result-empty">候選清單讀取失敗：${escapeHtml(err?.message || 'unknown')}</div>`;
+        }
+      }
+    }
+
+    async function refreshPipelineRuns(limit = 20) {
+      const maxRows = Math.max(1, Math.min(100, Number(limit || 20)));
+      try {
+        const res = await fetch(`/api/pipeline/runs?limit=${maxRows}`);
+        const payload = await res.json();
+        if (payload.status !== 'ok') throw new Error(payload.error || '讀取失敗');
+        renderPipelineRuns(payload.data || []);
+      } catch (err) {
+        const wrap = document.getElementById('pipeline-run-history');
+        if (wrap) {
+          wrap.innerHTML = `<div class="result-empty" style="padding:10px;">流程紀錄讀取失敗：${escapeHtml(err?.message || 'unknown')}</div>`;
+        }
+      }
+    }
+
+    function renderDailyRadarCandidates(items) {
+      const wrap = document.getElementById('radar-candidate-cards');
+      if (!wrap) return;
+      if (!Array.isArray(items) || items.length === 0) {
+        wrap.innerHTML = '<div class="result-empty">尚未有每日雷達結果</div>';
+        return;
+      }
+      const html = items.map((item, idx) => {
+        const rank = Number(item.rank || idx + 1);
+        const actionMeta = radarActionMeta(item.action_label);
+        const riskLight = radarRiskLightMeta(item);
+        const symbolNameHtml = renderSymbolNameHtml(item.symbol || '-', item.name || '');
+        const reasonTags = (Array.isArray(item.reason_tags) ? item.reason_tags : []).slice(0, 4).map(radarReasonLabel);
+        const blockerTags = (Array.isArray(item.blocker_tags) ? item.blocker_tags : []).map(radarBlockerMeta);
+        const dataQuality = radarDataQualityLabel(item.data_quality);
+        return `
+          <article class="pipeline-card radar-card">
+            <div class="pipeline-card-head">
+              <div class="pipeline-rank">#${rank}</div>
+              <div class="pipeline-symbol-block">
+                ${symbolNameHtml}
+              </div>
+              <div class="pipeline-type ${actionMeta.css}">${escapeHtml(actionMeta.text)}</div>
+            </div>
+            <div class="pipeline-light-row">
+              <span class="risk-light ${riskLight.css}"><span class="risk-light-dot"></span>${escapeHtml(riskLight.text)}</span>
+              <span class="risk-light-hint">${escapeHtml(riskLight.hint)}</span>
+            </div>
+            <div class="pipeline-score-grid">
+              <div><span>價格</span><strong>${escapeHtml(formatNumber(Number(item.price), 2))}</strong></div>
+              <div><span>Entry Score</span><strong>${escapeHtml(formatNumber(Number(item.entry_score), 2))}</strong></div>
+              <div><span>風險分數</span><strong>${escapeHtml(formatPct(Number(item.risk_score), 1))}</strong></div>
+              <div><span>資料品質</span><strong>${escapeHtml(dataQuality)}</strong></div>
+            </div>
+            <div class="pipeline-tags">
+              ${reasonTags.length > 0 ? reasonTags.map(tag => `<span class="pipeline-tag">${escapeHtml(tag)}</span>`).join('') : '<span class="pipeline-tag">無理由標籤</span>'}
+            </div>
+            <div class="pipeline-flags">
+              ${blockerTags.length > 0 ? blockerTags.map(tag => `<span class="pipeline-flag ${tag.level === 'danger' ? 'danger' : 'warn'}">${escapeHtml(tag.text)}</span>`).join('') : '<span class="pipeline-flag ok">無阻擋風險</span>'}
+            </div>
+          </article>
+        `;
+      }).join('');
+      wrap.innerHTML = html;
+    }
+
+    function renderWatchPool(rows) {
+      const wrap = document.getElementById('watch-pool-table');
+      if (!wrap) return;
+      if (!Array.isArray(rows) || rows.length === 0) {
+        wrap.innerHTML = '<div class="result-empty" style="padding:10px;">無資料</div>';
+        return;
+      }
+      const body = rows.map((item) => {
+        const actionMeta = radarActionMeta(item.action_label);
+        const riskLight = radarRiskLightMeta(item);
+        const blockers = (Array.isArray(item.blocker_tags) ? item.blocker_tags : [])
+          .map((tag) => radarBlockerMeta(tag).text)
+          .slice(0, 2);
+        const reasons = (Array.isArray(item.reason_tags) ? item.reason_tags : [])
+          .map(radarReasonLabel)
+          .slice(0, 2);
+        return `
+          <tr>
+            <td>${renderSymbolNameHtml(item.symbol || '-', item.name || '')}</td>
+            <td>${escapeHtml(radarStatusLabel(item.status))}</td>
+            <td><span class="table-chip ${actionMeta.css}">${escapeHtml(actionMeta.text)}</span></td>
+            <td><span class="risk-light ${riskLight.css}"><span class="risk-light-dot"></span>${escapeHtml(riskLight.text)}</span></td>
+            <td>${typeof item.entry_score === 'number' ? escapeHtml(item.entry_score.toFixed(2)) : '-'}</td>
+            <td>${typeof item.risk_score === 'number' ? escapeHtml(`${(item.risk_score * 100).toFixed(1)}%`) : '-'}</td>
+            <td>${escapeHtml(blockers.length > 0 ? blockers.join('｜') : '-')}</td>
+            <td>${escapeHtml(reasons.length > 0 ? reasons.join('｜') : '-')}</td>
+            <td>${escapeHtml(item.last_seen_date || '-')}</td>
+          </tr>
+        `;
+      }).join('');
+      wrap.innerHTML = `
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>代號 / 名稱</th>
+              <th>狀態</th>
+              <th>進場標籤</th>
+              <th>風險燈號</th>
+              <th>entry_score</th>
+              <th>risk_score</th>
+              <th>阻擋標籤</th>
+              <th>理由摘要</th>
+              <th>last_seen_date</th>
+            </tr>
+          </thead>
+          <tbody>${body}</tbody>
+        </table>
+      `;
+    }
+
+    async function refreshDailyRadar(count = 20) {
+      const maxCount = Math.max(1, Math.min(50, Number(count || 20)));
+      try {
+        const res = await fetch(`/api/radar/latest?count=${maxCount}`);
+        const payload = await res.json();
+        if (payload.status !== 'ok') throw new Error(payload.error || '讀取失敗');
+        renderDailyRadarCandidates(payload.data || []);
+      } catch (err) {
+        const wrap = document.getElementById('radar-candidate-cards');
+        if (wrap) {
+          wrap.innerHTML = `<div class="result-empty">每日雷達讀取失敗：${escapeHtml(err?.message || 'unknown')}</div>`;
+        }
+      }
+    }
+
+    async function refreshWatchPool(limit = 50) {
+      const maxRows = Math.max(1, Math.min(200, Number(limit || 50)));
+      try {
+        const res = await fetch(`/api/watch-pool?limit=${maxRows}&active_only=true`);
+        const payload = await res.json();
+        if (payload.status !== 'ok') throw new Error(payload.error || '讀取失敗');
+        renderWatchPool(payload.data || []);
+      } catch (err) {
+        const wrap = document.getElementById('watch-pool-table');
+        if (wrap) {
+          wrap.innerHTML = `<div class="result-empty" style="padding:10px;">觀察池讀取失敗：${escapeHtml(err?.message || 'unknown')}</div>`;
+        }
+      }
     }
 
     function updateResult(action, result) {
@@ -687,6 +1645,14 @@
       }
       if (action === 'strategy-backtest-export') {
         renderStrategyWorkbench(result?.backtest || {});
+      }
+      if (action === 'invest-pipeline') {
+        renderPipelineCandidates(result?.candidates || []);
+        updatePipelineTimeline(100, 'done', result?.step_metrics || null);
+      }
+      if (action === 'daily-radar') {
+        renderDailyRadarCandidates(result?.items || []);
+        refreshWatchPool(50);
       }
 
       if (action === 'account-diagnose') {
@@ -796,6 +1762,70 @@
           lookback_days: Number(document.getElementById('swing-lookback').value || 365)
         };
       }
+      if (action === 'paper-ledger') {
+        return {
+          symbol: document.getElementById('paper-symbol').value || '2330',
+          start_date: document.getElementById('paper-start').value || null,
+          end_date: document.getElementById('paper-end').value || null,
+          initial_cash: toNumber(document.getElementById('paper-cash').value, 10000),
+          hold_days: toNumber(document.getElementById('paper-hold').value, 5),
+          settlement_days: toNumber(document.getElementById('paper-settlement').value, 2),
+          force_close_end: document.getElementById('paper-force-close').checked
+        };
+      }
+      if (action === 'data-sync') {
+        return {
+          start_date: document.getElementById('sync-start').value || null,
+          end_date: document.getElementById('sync-end').value || null,
+          symbols: document.getElementById('sync-symbols').value || '',
+          include_bars: document.getElementById('sync-bars').checked,
+          include_chip: document.getElementById('sync-chip').checked,
+          include_broker_agg: document.getElementById('sync-broker-agg').checked,
+          include_disposition: document.getElementById('sync-disposition').checked
+        };
+      }
+      if (action === 'feature-rebuild') {
+        return {
+          start_date: document.getElementById('feature-start').value || null,
+          end_date: document.getElementById('feature-end').value || null,
+          symbols: document.getElementById('feature-symbols').value || ''
+        };
+      }
+      if (action === 'signal-preview') {
+        const maxOpenPositions = toNumber(document.getElementById('signal-max-open-positions').value, null);
+        return {
+          trade_date: document.getElementById('signal-trade-date').value || null,
+          trade_date_mode: document.getElementById('signal-trade-date-mode').value || 'T',
+          available_cash: toNumber(document.getElementById('signal-cash').value, 10000),
+          max_symbols: toNumber(document.getElementById('signal-max-symbols').value, 50),
+          require_chip: document.getElementById('signal-require-chip').checked,
+          block_disposition: document.getElementById('signal-block-disposition').checked,
+          rank_by: document.getElementById('signal-rank-by').value || 'score',
+          max_open_positions: maxOpenPositions,
+          data_freshness_required: document.getElementById('signal-data-freshness-required').checked,
+          chip_threshold_mode: document.getElementById('signal-chip-threshold-mode').value || 'absolute'
+        };
+      }
+      if (action === 'invest-pipeline') {
+        return {
+          trade_date: document.getElementById('pipeline-trade-date').value || null,
+          target_count: toNumber(document.getElementById('pipeline-target-count').value, 8),
+          risk_profile: document.getElementById('pipeline-risk-profile').value || 'balanced',
+          universe: document.getElementById('pipeline-universe').value || 'twse_tpex',
+          data_freshness_required: document.getElementById('pipeline-freshness').checked,
+          symbols_csv: document.getElementById('pipeline-symbols').value || '',
+        };
+      }
+      if (action === 'daily-radar') {
+        return {
+          trade_date: document.getElementById('pipeline-trade-date').value || null,
+          target_count: toNumber(document.getElementById('radar-target-count').value, 15),
+          risk_profile: document.getElementById('pipeline-risk-profile').value || 'balanced',
+          universe: document.getElementById('pipeline-universe').value || 'twse_tpex',
+          data_freshness_required: document.getElementById('pipeline-freshness').checked,
+          symbols_csv: document.getElementById('pipeline-symbols').value || '',
+        };
+      }
       if (action === 'ai-assistant') {
         return { force: document.getElementById('ai-force').checked };
       }
@@ -826,6 +1856,39 @@
         li.appendChild(meta);
         reportList.appendChild(li);
       });
+    }
+
+    async function refreshDataHealth() {
+      const symbolEl = document.getElementById('health-symbol');
+      const resultEl = document.getElementById('data-health-result');
+      if (!symbolEl || !resultEl) return;
+      const symbol = (symbolEl.value || '2330').trim();
+      resultEl.innerHTML = '<div class="result-empty">讀取中…</div>';
+      try {
+        const res = await fetch(`/api/data/health?symbol=${encodeURIComponent(symbol)}`);
+        const payload = await res.json();
+        if (payload.status !== 'ok') throw new Error(payload.error || '讀取失敗');
+        const data = payload.data || {};
+        const kv = [
+          ['標的', data.symbol || symbol],
+          ['日線筆數', data.daily_bars_count ?? '-'],
+          ['法人買賣超筆數', data.institutional_chip_count ?? '-'],
+          ['分點聚合筆數', data.broker_agg_count ?? '-'],
+          ['處置期間筆數', data.disposition_periods_count ?? '-'],
+          ['特徵快照筆數', data.feature_snapshots_count ?? '-'],
+          ['最新日線日期', data.latest_bar_date || '-'],
+          ['最新特徵日期', data.latest_feature_date || '-']
+        ];
+        resultEl.innerHTML = `
+          <div class="result-kv-grid">
+            ${kv.map(([label, value]) => `<div class="result-kv"><div class="result-kv-label">${escapeHtml(label)}</div><div class="result-kv-value">${escapeHtml(value)}</div></div>`).join('')}
+          </div>
+          <details class="result-json"><summary>查看原始 JSON</summary><pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre></details>
+        `;
+      } catch (err) {
+        const message = err?.message || '讀取失敗';
+        resultEl.innerHTML = `<div class="result-empty">資料健康度讀取失敗：${escapeHtml(message)}</div>`;
+      }
     }
 
     async function refreshHeartbeat() {
@@ -883,6 +1946,89 @@
       }
     }
 
+    function setFinMindUsageState(text, level = 'neutral') {
+      const stateEl = document.getElementById('finmind-usage-state');
+      if (!stateEl) return;
+      stateEl.textContent = text;
+      stateEl.className = `quota-state ${level}`;
+    }
+
+    function setFinMindUsageMeta(text) {
+      const metaEl = document.getElementById('finmind-usage-meta');
+      if (!metaEl) return;
+      metaEl.textContent = text;
+    }
+
+    function renderFinMindUsage(data) {
+      const countEl = document.getElementById('finmind-usage-count');
+      const limitEl = document.getElementById('finmind-usage-limit');
+      const remainEl = document.getElementById('finmind-usage-remaining');
+      const barEl = document.getElementById('finmind-usage-bar');
+      if (!countEl || !limitEl || !remainEl || !barEl) return;
+
+      const count = typeof data.api_request_count === 'number' ? data.api_request_count : null;
+      const limit = typeof data.api_request_limit === 'number' ? data.api_request_limit : null;
+      const remaining = typeof data.api_request_remaining === 'number' ? data.api_request_remaining : null;
+      const ratio = typeof data.usage_ratio === 'number' ? data.usage_ratio : null;
+
+      countEl.textContent = count === null ? '-' : formatNumber(count, 0);
+      limitEl.textContent = limit === null ? '-' : formatNumber(limit, 0);
+      remainEl.textContent = remaining === null ? '-' : formatNumber(remaining, 0);
+
+      const percent = ratio === null ? 0 : Math.max(0, Math.min(100, ratio * 100));
+      barEl.style.width = `${percent}%`;
+      barEl.className = 'quota-bar-fill';
+
+      if (ratio === null) {
+        setFinMindUsageState('可用資訊不足', 'warn');
+      } else if (ratio >= 0.9) {
+        barEl.classList.add('danger');
+        setFinMindUsageState(`配額緊張（${percent.toFixed(1)}%）`, 'warn');
+      } else if (ratio >= 0.7) {
+        barEl.classList.add('warn');
+        setFinMindUsageState(`配額偏高（${percent.toFixed(1)}%）`, 'warn');
+      } else {
+        setFinMindUsageState(`配額健康（${percent.toFixed(1)}%）`, 'ok');
+      }
+
+      const checkedAt = data.queried_at ? `更新時間：${data.queried_at}` : '更新時間：未知';
+      const userCount = typeof data.user_count === 'number' ? ` | 平台用戶數：${formatNumber(data.user_count, 0)}` : '';
+      setFinMindUsageMeta(`${checkedAt}${userCount}`);
+    }
+
+    async function refreshFinMindUsage() {
+      try {
+        setFinMindUsageState('讀取中…', 'neutral');
+        const res = await fetch('/api/finmind/usage');
+        const payload = await res.json();
+        if (payload.status !== 'ok') throw new Error(payload.error || '讀取失敗');
+        renderFinMindUsage(payload.data || {});
+      } catch (err) {
+        const message = err?.message || '讀取失敗';
+        setFinMindUsageState('讀取失敗', 'warn');
+        setFinMindUsageMeta(`原因：${message}`);
+        appendLog(`FinMind 用量讀取失敗：${message}`);
+      }
+    }
+
+    function setupFinMindAutoRefresh() {
+      const autoEl = document.getElementById('finmind-auto-refresh');
+      if (!autoEl) return;
+
+      const rebind = () => {
+        if (finmindUsageTimer) {
+          clearInterval(finmindUsageTimer);
+          finmindUsageTimer = null;
+        }
+        if (autoEl.checked) {
+          finmindUsageTimer = setInterval(refreshFinMindUsage, 60000);
+        }
+      };
+
+      autoEl.addEventListener('change', rebind);
+      rebind();
+    }
+
     async function loadStrategyDefaults() {
       try {
         const res = await fetch('/api/strategy/default');
@@ -908,6 +2054,9 @@
         statusEl.textContent = `${data.message}（${stateText}）${elapsed}`;
       }
       updateProgress(action, data.progress || 0);
+      if (action === 'invest-pipeline') {
+        updatePipelineTimeline(data.progress || 0, data.state || 'idle', null);
+      }
       if (data.result) updateResult(action, data.result);
       if (Array.isArray(data.log) && data.log.length > 0) {
         appendLog(`${actionLabel(action)}：${data.log[0]}`);
@@ -915,6 +2064,17 @@
       if (data.state === 'done' || data.state === 'error') {
         clearInterval(pollers[action]);
         pollers[action] = null;
+        if (action === 'data-sync' || action === 'feature-rebuild') {
+          await refreshDataHealth();
+        }
+        if (action === 'invest-pipeline') {
+          await refreshLatestCandidates(10);
+          await refreshPipelineRuns(20);
+        }
+        if (action === 'daily-radar') {
+          await refreshDailyRadar(20);
+          await refreshWatchPool(50);
+        }
         await refreshReports();
       }
     }
@@ -927,6 +2087,9 @@
       try {
         const resultEl = document.querySelector(`[data-result="${action}"]`);
         if (resultEl) resultEl.innerHTML = '<div class="result-empty">執行中，等待結果…</div>';
+        if (action === 'invest-pipeline') {
+          updatePipelineTimeline(0, 'running', null);
+        }
         const res = await fetch(`/api/run/${action}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -937,6 +2100,9 @@
           const errMsg = data.error || '無法啟動，請稍後再試';
           if (statusEl) statusEl.textContent = `無法啟動：${errMsg}`;
           appendLog(`${label} 無法啟動：${errMsg}`);
+          if (action === 'invest-pipeline') {
+            updatePipelineTimeline(0, 'error', null);
+          }
           return;
         }
         if (pollers[action]) clearInterval(pollers[action]);
@@ -946,6 +2112,9 @@
         const errMsg = err?.message || '請確認後端是否啟動，或重新整理頁面';
         if (statusEl) statusEl.textContent = `連線失敗：${errMsg}`;
         appendLog(`${label} 執行失敗：${errMsg}`);
+        if (action === 'invest-pipeline') {
+          updatePipelineTimeline(0, 'error', null);
+        }
       }
     }
 
@@ -953,9 +2122,37 @@
       btn.addEventListener('click', () => runAction(btn.dataset.action));
     });
 
+    document.querySelectorAll('[data-quick-action]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.quickTab;
+        if (tab) setActiveTab(tab);
+        runAction(btn.dataset.quickAction);
+      });
+    });
+
+    document.querySelectorAll('[data-quick-tab]:not([data-quick-action])').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.quickTab;
+        if (tab) setActiveTab(tab);
+      });
+    });
+
     document.getElementById('refresh-log').addEventListener('click', refreshServerLog);
     document.getElementById('refresh-shioaji-env').addEventListener('click', refreshShioajiEnv);
     document.getElementById('trade-sim').addEventListener('change', refreshShioajiEnv);
+    document.getElementById('refresh-finmind-usage').addEventListener('click', refreshFinMindUsage);
+    document.getElementById('refresh-data-health').addEventListener('click', refreshDataHealth);
+    document.getElementById('refresh-pipeline-runs').addEventListener('click', () => refreshPipelineRuns(20));
+    document.getElementById('refresh-latest-candidates').addEventListener('click', () => {
+      const targetCount = toNumber(document.getElementById('pipeline-target-count').value, 8);
+      refreshLatestCandidates(targetCount);
+    });
+    document.getElementById('refresh-radar-candidates').addEventListener('click', () => {
+      const targetCount = toNumber(document.getElementById('radar-target-count').value, 15);
+      refreshDailyRadar(targetCount);
+    });
+    document.getElementById('refresh-watch-pool').addEventListener('click', () => refreshWatchPool(50));
+    document.getElementById('to-advanced-mode').addEventListener('click', () => setActiveTab('strategy'));
 
     document.getElementById('post-test').addEventListener('click', async () => {
       try {
@@ -971,11 +2168,44 @@
       }
     });
 
+    (function initDateDefaults() {
+      const fmt = (dt) => dt.toISOString().slice(0, 10);
+      const today = new Date();
+      const oneYearAgo = new Date();
+      oneYearAgo.setDate(today.getDate() - 365);
+
+      const pairIds = [
+        ['swing-start', 'swing-end'],
+        ['paper-start', 'paper-end'],
+        ['sync-start', 'sync-end'],
+        ['feature-start', 'feature-end'],
+      ];
+      pairIds.forEach(([startId, endId]) => {
+        const startEl = document.getElementById(startId);
+        const endEl = document.getElementById(endId);
+        if (startEl && !startEl.value) startEl.value = fmt(oneYearAgo);
+        if (endEl && !endEl.value) endEl.value = fmt(today);
+      });
+      const signalDateEl = document.getElementById('signal-trade-date');
+      if (signalDateEl && !signalDateEl.value) signalDateEl.value = fmt(today);
+      const pipelineDateEl = document.getElementById('pipeline-trade-date');
+      if (pipelineDateEl && !pipelineDateEl.value) pipelineDateEl.value = fmt(today);
+    })();
+
+    initTabs();
+    updatePipelineTimeline(0, 'idle', null);
     renderStrategyWorkbench({});
+    refreshLatestCandidates(10);
+    refreshDailyRadar(20);
+    refreshWatchPool(50);
+    refreshPipelineRuns(20);
     refreshReports();
     refreshHeartbeat();
     refreshServerLog();
     refreshShioajiEnv();
+    refreshFinMindUsage();
+    refreshDataHealth();
+    setupFinMindAutoRefresh();
     loadStrategyDefaults();
     setInterval(refreshHeartbeat, 5000);
   </script>

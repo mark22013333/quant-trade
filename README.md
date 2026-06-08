@@ -196,7 +196,40 @@ python run_web.py --host 0.0.0.0 --port 8080
 python tools/shioaji_check.py
 ```
 
-### 10) 執行測試
+### 10) 台股 Phase 1 CLI（資料庫 + 同步 + 回測）
+
+新增 `app/` 模組，支援以下命令：
+
+```bash
+python -m app.cli init-db
+python -m app.cli check-finmind
+python -m app.cli sync-0050
+python -m app.cli sync-bars --start-date 2024-01-01
+python -m app.cli sync-chip --start-date 2024-01-01
+python -m app.cli sync-broker-agg --start-date 2024-01-01
+python -m app.cli sync-disposition --start-date 2024-01-01
+python -m app.cli sync-market-bundle --start-date 2024-01-01 --symbols 2330,2317
+python -m app.cli rebuild-features --start-date 2024-01-01 --symbols 2330
+python -m app.cli signal-preview --trade-date 2025-01-03 --available-cash 10000
+python -m app.cli list-0050
+python -m app.cli backtest --symbol 2330 --start-date 2024-01-01 --end-date 2025-01-01
+python -m app.cli run-signal-job --notify telegram --available-cash 10000
+python -m app.cli run-scheduler --notify both --available-cash 10000 --hour 13 --minute 40
+python -m app.cli live-buy --symbol 2330 --price 580
+python -m app.cli paper-ledger --symbol 2330 --start-date 2024-01-01 --end-date 2025-01-01 --initial-cash 10000
+```
+
+備註：
+- `FINMIND_API_KEY` 請放在 `.env`（命名已統一）
+- `backtest` 需安裝 `backtrader`
+- `run-signal-job` / `run-scheduler` 會以 MA60 + 量能 + RSI3/KD 進場條件計算訊號，並用絕對本金防線估算可買股數
+- `sync-market-bundle` 會依序同步：日線 / 法人買賣超 / 分點聚合 / 處置股票（FinMind Sponsor 資料）
+- `rebuild-features` 會產生 `feature_snapshots`（技術 + 籌碼 + 處置狀態）
+- `signal-preview` 可先在本地檢視「籌碼條件 + 處置濾網 + 本金防線」後的建議下單結果
+- `live-buy` 會在 `place_order` 前做兩次可用餘額校驗（若超額直接拒絕，不送單）
+- `paper-ledger` 會產生 T+2 模擬資金帳本（HTML/CSV/JSON）並輸出到 `reports/`
+
+### 11) 執行測試
 
 ```bash
 pytest -q
@@ -217,7 +250,9 @@ SHIOAJI_SECRET=your_secret
 SHIOAJI_CA_PATH=/path/to/ca
 SHIOAJI_CA_PASSWORD=your_ca_password
 SHIOAJI_CA_PERSON_ID=your_person_id
-FINMIND_TOKEN=your_finmind_token  # 可選：策略 C 資料品質更完整
+FINMIND_API_KEY=your_finmind_api_key  # FinMind 資料同步與策略 C
+FINMIND_API_URL=https://api.finmindtrade.com/api/v4/data
+FINMIND_USER_INFO_URL=https://api.web.finmindtrade.com/v2/user_info
 ```
 
 在推上 GitHub 前，請確認：

@@ -7,6 +7,9 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from .shioaji_gateway import ProductionPermissionError, ShioajiGateway, ShioajiGatewayError
+from app.broker.shioaji_gateway import ShioajiConfig, ShioajiGateway as CoreShioajiGateway
+from app.broker.pre_trade_check import LiveOrderUnlockConfig, validate_live_order_unlock
+from app.execution import OrderIntent, TradingExecutionService
 
 
 def _mode_text(simulation: bool) -> str:
@@ -24,6 +27,7 @@ class OrderTestConfig:
     futures_price: float | None = None
     interval_sec: float = 1.1
     allow_live_order: bool = False
+    live_order_nonce: str = ""
 
 
 class ShioajiWorkflowService:
@@ -80,16 +84,18 @@ class ShioajiWorkflowService:
             }
 
     def run_stock_order_test(self, config: OrderTestConfig) -> Dict[str, Any]:
-        if not config.simulation and not config.allow_live_order:
+        live_unlock = self._validate_live_order_unlock(config)
+        if not config.simulation and not live_unlock["accepted"]:
             return {
                 "passed": False,
                 "simulation": False,
-                "error": "live_order_locked",
-                "message": "正式環境下單測試已鎖定。若要送出真單，請勾選允許正式下單。",
+                "error": live_unlock["reason"],
+                "message": live_unlock["message"],
                 "next_steps": [
                     "先在模擬模式完成測試流程",
                     "確認正式環境檢核已通過",
-                    "確認無誤後再勾選允許正式下單",
+                    "在後端設定 SHIOAJI_ENABLE_LIVE_ORDERS=1",
+                    "若有設定 SHIOAJI_LIVE_ORDER_NONCE，請在請求中帶入相同 nonce",
                 ],
             }
         try:
@@ -99,6 +105,9 @@ class ShioajiWorkflowService:
                     stock_code=config.stock_code,
                     quantity=config.stock_quantity,
                     order_price=config.stock_price,
+                    simulation=config.simulation,
+                    allow_live_order=config.allow_live_order,
+                    live_order_nonce=config.live_order_nonce,
                 )
                 result["simulation"] = config.simulation
                 result["mode"] = _mode_text(config.simulation)
@@ -114,16 +123,18 @@ class ShioajiWorkflowService:
             }
 
     def run_futures_order_test(self, config: OrderTestConfig) -> Dict[str, Any]:
-        if not config.simulation and not config.allow_live_order:
+        live_unlock = self._validate_live_order_unlock(config)
+        if not config.simulation and not live_unlock["accepted"]:
             return {
                 "passed": False,
                 "simulation": False,
-                "error": "live_order_locked",
-                "message": "正式環境下單測試已鎖定。若要送出真單，請勾選允許正式下單。",
+                "error": live_unlock["reason"],
+                "message": live_unlock["message"],
                 "next_steps": [
                     "先在模擬模式完成測試流程",
                     "確認正式環境檢核已通過",
-                    "確認無誤後再勾選允許正式下單",
+                    "在後端設定 SHIOAJI_ENABLE_LIVE_ORDERS=1",
+                    "若有設定 SHIOAJI_LIVE_ORDER_NONCE，請在請求中帶入相同 nonce",
                 ],
             }
         try:
@@ -162,6 +173,9 @@ class ShioajiWorkflowService:
                     stock_code=config.stock_code,
                     quantity=config.stock_quantity,
                     order_price=config.stock_price,
+                    simulation=True,
+                    allow_live_order=False,
+                    live_order_nonce="",
                 )
                 time.sleep(interval_sec)
                 futures_result = self._execute_futures_order(
@@ -224,7 +238,7 @@ class ShioajiWorkflowService:
                     }
                     if signed is True:
                         signed_count += 1
-                    account_rows.append(row)
+                    account_rows.append(self.gateway.serialize(row))
 
                 ca_configured = bool(context.env_status.get("SHIOAJI_CA_PATH") and context.env_status.get("SHIOAJI_CA_PASSWORD"))
                 ready_for_live = bool(context.production_permission and signed_count > 0 and ca_configured)
@@ -404,35 +418,67 @@ class ShioajiWorkflowService:
                 "settlements": self.gateway.serialize(settlements),
             }
 
-    def _execute_stock_order(self, *, api, stock_code: str, quantity: int, order_price: float | None) -> Dict[str, Any]:
-        import shioaji as sj
-
-        account = self.gateway.pick_stock_account(api)
-        if account is None:
-            raise ShioajiGatewayError("找不到股票帳戶，無法執行證券下單測試")
+    def _execute_stock_order(
+        self,
+        *,
+        api,
+        stock_code: str,
+        quantity: int,
+        order_price: float | None,
+        simulation: bool = True,
+        allow_live_order: bool = False,
+        live_order_nonce: str = "",
+    ) -> Dict[str, Any]:
         contract = self.gateway.get_stock_contract(api, stock_code)
-        price = float(order_price) if isinstance(order_price, (int, float)) and order_price > 0 else self.gateway.pick_reference_price(contract, fallback=10.0)
-        order = api.Order(
-            price=price,
-            quantity=int(quantity),
-            action=sj.constant.Action.Buy,
-            price_type=sj.constant.StockPriceType.LMT,
-            order_type=sj.constant.OrderType.ROD,
-            account=account,
+        price = (
+            float(order_price)
+            if isinstance(order_price, (int, float)) and order_price > 0
+            else self.gateway.pick_reference_price(contract, fallback=10.0)
         )
-        trade = self.gateway.call_with_timeout(api.place_order, 15, contract, order)
-        self._update_order_status(api, account)
-        status = self.gateway.extract_trade_status(trade)
-        passed = status.upper() not in {"FAILED", "REJECTED", "CANCELLED"}
+        core_gateway = CoreShioajiGateway(
+            ShioajiConfig(
+                simulation=bool(simulation),
+                allow_live_order=bool(allow_live_order),
+                live_order_nonce=str(live_order_nonce or ""),
+            )
+        )
+        core_gateway.api = api
+        intent = OrderIntent(
+            source="web",
+            environment="simulation" if simulation else "live",
+            symbol=str(stock_code),
+            side="buy",
+            price=float(price),
+            quantity=int(quantity),
+            order_lot="IntradayOdd",
+            metadata={"workflow": "shioaji_stock_order_test"},
+        )
+        service = TradingExecutionService(gateway=core_gateway)
+        execution = service.execute_intent(intent)
+        status = execution.status
+        passed = bool(execution.executed) and status.upper() not in {"FAILED", "REJECTED", "CANCELLED"}
         return {
             "passed": passed,
             "message": "證券下單測試通過" if passed else f"證券下單狀態異常：{status}",
-            "stock_code": getattr(contract, "code", stock_code),
+            "stock_code": execution.symbol,
             "order_price": price,
             "quantity": quantity,
             "status": status,
-            "trade": self.gateway.serialize(trade),
+            "intent": intent.to_dict(),
+            "execution": execution.to_dict(),
+            "trade": execution.raw_trade,
         }
+
+    @staticmethod
+    def _validate_live_order_unlock(config: OrderTestConfig) -> Dict[str, Any]:
+        result = validate_live_order_unlock(
+            LiveOrderUnlockConfig(
+                simulation=bool(config.simulation),
+                allow_live_order=bool(config.allow_live_order),
+                live_order_nonce=str(config.live_order_nonce or ""),
+            )
+        )
+        return {"accepted": result.accepted, "reason": result.reason, "message": result.message}
 
     def _execute_futures_order(self, *, api, futures_code: str, quantity: int, order_price: float | None) -> Dict[str, Any]:
         import shioaji as sj
@@ -539,7 +585,7 @@ class ShioajiWorkflowService:
             code = data.get("code") or data.get("symbol") or "UNKNOWN"
             qty = data.get("quantity") or data.get("qty") or 0
             summary_items.append(f"{code} x{qty}")
-            detail_items.append(str(data))
+            detail_items.append(str(self.gateway.serialize(data)))
         return ", ".join(summary_items[:6]), " | ".join(detail_items[:6])
 
     @staticmethod

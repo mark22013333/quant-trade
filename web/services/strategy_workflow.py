@@ -1,47 +1,17 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
 import pandas as pd
 
 from backtest.backtest_engine import BacktestEngine
+from app.security.reporting import sanitize_report_payload
+from app.services.strategy_config import StrategyConfigError, StrategyRunConfig
 from config.settings import DEFAULT_SETTINGS
 from data.data_facade import DataFacade
-
-
-@dataclass
-class StrategyRunConfig:
-    symbol: str = "2330.TW"
-    market: str = "TW"
-    start_date: str | None = None
-    end_date: str | None = None
-    enabled: Dict[str, bool] = field(
-        default_factory=lambda: {
-            "momentum_trend": True,
-            "mean_reversion": True,
-            "chip_flow": True,
-        }
-    )
-    weights: Dict[str, float] = field(
-        default_factory=lambda: {
-            "momentum_trend": 0.4,
-            "mean_reversion": 0.3,
-            "chip_flow": 0.3,
-        }
-    )
-    threshold: float = 0.6
-    strategy_params: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    risk_config: Dict[str, Any] = field(default_factory=dict)
-    backtest_config: Dict[str, Any] = field(default_factory=dict)
-
-    def normalized_dates(self) -> tuple[str, str]:
-        end_date = self.end_date or datetime.now().strftime("%Y-%m-%d")
-        start_date = self.start_date or (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
-        return start_date, end_date
 
 
 class StrategyWorkflowService:
@@ -98,6 +68,10 @@ class StrategyWorkflowService:
             "recent_signals": self._recent_signals(signals, limit=30),
             "trade_log": self._frame_to_rows(trades, limit=120),
             "equity_curve": self._equity_to_rows(result.get("equity_curve"), limit=300),
+            "cost_breakdown": result.get("cost_breakdown", {}),
+            "fill_rejects": self._frame_to_rows(result.get("fill_rejects", pd.DataFrame()), limit=200),
+            "data_quality_summary": result.get("data_quality_summary", {}),
+            "execution_model": result.get("execution_model", {}),
             "raw": {
                 "enabled": config.enabled,
                 "weights": config.weights,
@@ -137,7 +111,15 @@ class StrategyWorkflowService:
         }
 
     def _execute_backtest(self, config: StrategyRunConfig) -> dict:
-        start_date, end_date = config.normalized_dates()
+        try:
+            config = config.validated()
+            start_date, end_date = config.normalized_dates()
+        except StrategyConfigError as exc:
+            return {
+                "passed": False,
+                "message": str(exc),
+                "error": "invalid_config",
+            }
         df = self.data_facade.load_for_strategy(
             symbol=config.symbol,
             start_date=start_date,
@@ -163,12 +145,7 @@ class StrategyWorkflowService:
             df=df,
             symbol=config.symbol,
             market=config.market,
-            strategy_config={
-                "enabled": config.enabled,
-                "weights": config.weights,
-                "threshold": config.threshold,
-                "params": config.strategy_params,
-            },
+            strategy_config=config.strategy_engine_config(),
             risk_config=config.risk_config,
             backtest_config=config.backtest_config,
         )
@@ -198,39 +175,45 @@ class StrategyWorkflowService:
         trade_log = result.get("trade_log", pd.DataFrame())
         signals = result.get("signals", pd.DataFrame())
         equity = result.get("equity_curve", pd.Series(dtype=float))
+        fill_rejects = result.get("fill_rejects", pd.DataFrame())
 
         summary_json_name = f"{prefix}_summary.json"
         trades_csv_name = f"{prefix}_trades.csv"
         signals_csv_name = f"{prefix}_signals.csv"
         equity_csv_name = f"{prefix}_equity.csv"
+        fill_rejects_csv_name = f"{prefix}_fill_rejects.csv"
 
         summary_path = out_dir / summary_json_name
         trades_path = out_dir / trades_csv_name
         signals_path = out_dir / signals_csv_name
         equity_path = out_dir / equity_csv_name
+        fill_rejects_path = out_dir / fill_rejects_csv_name
 
-        summary_with_meta = {
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "symbol": config.symbol,
-            "market": config.market,
-            "period": {"start_date": start_date, "end_date": end_date},
-            "config": {
-                "enabled": config.enabled,
-                "weights": config.weights,
-                "threshold": config.threshold,
-                "strategy_params": config.strategy_params,
-                "risk_config": config.risk_config,
-                "backtest_config": config.backtest_config,
-            },
-            "result": summary,
-        }
+        summary_with_meta = sanitize_report_payload(
+            {
+                "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "symbol": config.symbol,
+                "market": config.market,
+                "period": {"start_date": start_date, "end_date": end_date},
+                "config": {
+                    "enabled": config.enabled,
+                    "weights": config.weights,
+                    "threshold": config.threshold,
+                    "strategy_params": config.strategy_params,
+                    "risk_config": config.risk_config,
+                    "backtest_config": config.backtest_config,
+                },
+                "result": summary,
+            }
+        )
         summary_path.write_text(json.dumps(summary_with_meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-        trade_log.to_csv(trades_path, index=False, encoding="utf-8-sig")
-        signals.to_csv(signals_path, index=True, encoding="utf-8-sig")
+        self._sanitize_frame(trade_log).to_csv(trades_path, index=False, encoding="utf-8-sig")
+        self._sanitize_frame(signals).to_csv(signals_path, index=True, encoding="utf-8-sig")
         equity_frame = pd.Series(equity, name="equity").to_frame()
         equity_frame.index.name = "date"
-        equity_frame.to_csv(equity_path, encoding="utf-8-sig")
+        self._sanitize_frame(equity_frame).to_csv(equity_path, encoding="utf-8-sig")
+        self._sanitize_frame(fill_rejects).to_csv(fill_rejects_path, index=False, encoding="utf-8-sig")
 
         return {
             "prefix": prefix,
@@ -240,12 +223,14 @@ class StrategyWorkflowService:
                 "trades_csv": trades_csv_name,
                 "signals_csv": signals_csv_name,
                 "equity_csv": equity_csv_name,
+                "fill_rejects_csv": fill_rejects_csv_name,
             },
             "urls": {
                 "summary_json": f"/reports/{summary_json_name}",
                 "trades_csv": f"/reports/{trades_csv_name}",
                 "signals_csv": f"/reports/{signals_csv_name}",
                 "equity_csv": f"/reports/{equity_csv_name}",
+                "fill_rejects_csv": f"/reports/{fill_rejects_csv_name}",
             },
         }
 
@@ -253,6 +238,12 @@ class StrategyWorkflowService:
     def _safe_symbol(symbol: str) -> str:
         cleaned = "".join(ch if ch.isalnum() else "_" for ch in str(symbol or "SYMBOL"))
         return cleaned.strip("_") or "SYMBOL"
+
+    @staticmethod
+    def _sanitize_frame(frame: pd.DataFrame) -> pd.DataFrame:
+        if frame is None or frame.empty:
+            return pd.DataFrame()
+        return frame.map(sanitize_report_payload)
 
     @staticmethod
     def _strategy_summary(signals: pd.DataFrame) -> dict:

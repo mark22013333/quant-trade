@@ -10,6 +10,16 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 
+def _is_loopback_host(host: str) -> bool:
+    value = str(host or "").strip().lower()
+    return value in {"127.0.0.1", "localhost", "::1"}
+
+
+def validate_bind_security(host: str, token: str | None = None) -> None:
+    if not _is_loopback_host(str(host)) and not str(token or os.getenv("CONTROL_PANEL_TOKEN", "")).strip():
+        raise SystemExit("綁定非 localhost 時必須設定 CONTROL_PANEL_TOKEN，避免控制台與 reports 被外部直接存取。")
+
+
 def ensure_runtime_cache_dirs() -> None:
     """
     Ensure native libs (matplotlib/fontconfig) use writable cache directories.
@@ -54,13 +64,15 @@ def main() -> None:
     ensure_runtime_cache_dirs()
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(PROJECT_ROOT))
+    os.environ["CONTROL_PANEL_BIND_HOST"] = str(args.host)
+    validate_bind_security(str(args.host))
 
     try:
         import uvicorn
     except Exception as exc:  # noqa: BLE001
-        raise SystemExit("找不到 uvicorn，請先安裝 requirements：{exc}")
+        raise SystemExit(f"找不到 uvicorn，請先安裝 requirements：{exc}")
 
-    reload_dirs = args.reload_dirs or ["web", "tools", "analysis", "strategies", "backtest", "data"]
+    reload_dirs = args.reload_dirs or ["web", "tools", "analysis", "strategies", "backtest", "data", "app"]
     uvicorn.run(
         "web.control_panel_app:app",
         host=args.host,

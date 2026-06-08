@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 import threading
 import time
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -12,6 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app.security import redact_sensitive
 from web.services import (
     ShioajiGateway,
     ShioajiWorkflowService,
@@ -38,7 +40,77 @@ def _append_log_line(action: str, message: str) -> None:
         return
 
 
-app = FastAPI(title="Quant-Trade Control Panel")
+@asynccontextmanager
+async def _lifespan(_: FastAPI):
+    _append_log_line("server", "control panel started")
+    try:
+        from app.db.session import init_db
+
+        init_db()
+        _append_log_line("server", "app DB schema initialized")
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("server", f"app DB schema init skipped: {exc}")
+    yield
+
+
+app = FastAPI(title="Quant-Trade Control Panel", lifespan=_lifespan)
+
+
+def _control_panel_token() -> str:
+    return os.getenv("CONTROL_PANEL_TOKEN", "").strip()
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    value = str(host or "").split(":")[0].strip().lower()
+    return value in {"", "127.0.0.1", "localhost", "::1", "testclient", "testserver"}
+
+
+def _request_token(request: Request) -> str:
+    auth = str(request.headers.get("authorization") or "").strip()
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return str(request.headers.get("x-control-panel-token") or "").strip()
+
+
+def _with_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _safe_error_text(exc: Exception) -> str:
+    redacted = redact_sensitive(str(exc))
+    return redacted if isinstance(redacted, str) and redacted else "internal_error"
+
+
+def _safe_error_response(code: str = "internal_error", status_code: int = 500) -> JSONResponse:
+    return JSONResponse({"status": "error", "error": code}, status_code=status_code)
+
+
+@app.middleware("http")
+async def _security_guard(request: Request, call_next):
+    token = _control_panel_token()
+    client_host = request.client.host if request.client else ""
+    bind_host = os.getenv("CONTROL_PANEL_BIND_HOST", "127.0.0.1")
+    external_bind = not _is_loopback_host(bind_host)
+    external_client = not _is_loopback_host(client_host)
+
+    if token:
+        protected = request.url.path.startswith("/api") or request.url.path.startswith("/reports")
+        if protected and _request_token(request) != token:
+            return _with_security_headers(JSONResponse({"status": "error", "error": "unauthorized"}, status_code=401))
+    elif external_bind or external_client:
+        return _with_security_headers(
+            JSONResponse(
+                {"status": "error", "error": "control panel requires CONTROL_PANEL_TOKEN outside localhost"},
+                status_code=403,
+            )
+        )
+    response = await call_next(request)
+    if request.url.path.startswith("/api") or request.url.path.startswith("/reports"):
+        return _with_security_headers(response)
+    return response
 
 
 @app.middleware("http")
@@ -78,6 +150,7 @@ class AccountBalanceRequest(BaseModel):
 class ShioajiTestRequest(BaseModel):
     simulation: bool = True
     allow_live_order: bool = False
+    live_order_nonce: str = Field(default="", max_length=120)
     stock_code: str = Field(default="2890", min_length=3, max_length=12)
     stock_quantity: int = Field(default=1, ge=1, le=10)
     stock_price: float | None = Field(default=None, gt=0)
@@ -112,8 +185,83 @@ class StrategyBacktestRequest(BaseModel):
     backtest_config: Dict[str, Any] = Field(default_factory=dict)
 
 
+class PaperLedgerRequest(BaseModel):
+    symbol: str = Field(default="2330", min_length=2, max_length=24)
+    start_date: str | None = None
+    end_date: str | None = None
+    initial_cash: float = Field(default=10_000, ge=1_000, le=5_000_000)
+    hold_days: int = Field(default=5, ge=1, le=20)
+    settlement_days: int = Field(default=2, ge=1, le=5)
+    force_close_end: bool = True
+
+
+class DataSyncRequest(BaseModel):
+    start_date: str | None = None
+    end_date: str | None = None
+    symbols: str = Field(default="", max_length=5000)
+    include_bars: bool = True
+    include_chip: bool = True
+    include_broker_agg: bool = True
+    include_disposition: bool = True
+
+
+class FeatureRebuildRequest(BaseModel):
+    start_date: str | None = None
+    end_date: str | None = None
+    symbols: str = Field(default="", max_length=5000)
+
+
+class SignalPreviewRequest(BaseModel):
+    trade_date: str | None = None
+    trade_date_mode: str = "T"
+    available_cash: float = Field(default=10_000, ge=1_000, le=5_000_000)
+    max_symbols: int = Field(default=50, ge=1, le=300)
+    require_chip: bool = True
+    block_disposition: bool = True
+    rank_by: str = "score"
+    max_open_positions: int | None = Field(default=None, ge=1, le=30)
+    data_freshness_required: bool = False
+    chip_threshold_mode: str = "absolute"
+
+
+class OneClickPipelineRequest(BaseModel):
+    trade_date: str | None = None
+    target_count: int = Field(default=8, ge=5, le=10)
+    risk_profile: str = Field(default="balanced")
+    universe: str = Field(default="twse_tpex")
+    data_freshness_required: bool = True
+    symbols_csv: str = Field(default="", max_length=5000)
+
+
+class DailyRadarRequest(BaseModel):
+    trade_date: str | None = None
+    target_count: int = Field(default=15, ge=10, le=20)
+    risk_profile: str = Field(default="balanced")
+    universe: str = Field(default="twse_tpex")
+    data_freshness_required: bool = True
+    symbols_csv: str = Field(default="", max_length=5000)
+
+
+def _normalize_tw_symbol(raw: str) -> str:
+    code = str(raw or "").strip().upper()
+    for suffix in (".TW", ".TWO"):
+        if code.endswith(suffix):
+            code = code[: -len(suffix)]
+    return code
+
+
+def _parse_symbols_csv(text: str) -> list[str] | None:
+    items = [item.strip() for item in str(text or "").split(",") if item.strip()]
+    if not items:
+        return None
+    return sorted({_normalize_tw_symbol(item) for item in items if _normalize_tw_symbol(item)})
+
+
 _status_lock = threading.RLock()
 _status: Dict[str, Dict[str, object]] = {}
+_active_action_lock = threading.RLock()
+_active_actions: set[str] = set()
+MAX_ACTIVE_ACTIONS = max(1, int(os.getenv("CONTROL_PANEL_MAX_ACTIVE_ACTIONS", "3")))
 SHIOAJI_LOCK = threading.Lock()
 SHIOAJI_LOCK_TIMEOUT_SEC = 16
 
@@ -158,13 +306,14 @@ def _update(
         if progress is not None:
             entry["progress"] = progress
         if message is not None:
-            entry["message"] = message
+            entry["message"] = redact_sensitive(message)
         if append_log:
-            entry.setdefault("log", []).insert(0, append_log)
+            safe_log = _safe_error_text(Exception(append_log))
+            entry.setdefault("log", []).insert(0, safe_log)
             entry["log"] = entry["log"][:80]
-            _append_log_line(action, append_log)
+            _append_log_line(action, safe_log)
         if result is not None:
-            entry["result"] = result
+            entry["result"] = redact_sensitive(result)
         entry["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -231,6 +380,27 @@ def _finalize_test_result(action: str, result: Dict[str, object]) -> None:
         )
         return
     _update(action, state="done", progress=100, message=message, result=result)
+
+
+def _persist_execution_payload(payload: Dict[str, object] | None) -> None:
+    if not isinstance(payload, dict):
+        return
+    intent = payload.get("intent")
+    execution = payload.get("execution")
+    if not isinstance(intent, dict) or not isinstance(execution, dict):
+        return
+    try:
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            repo.add_trading_execution_record(intent=intent, result=execution)
+            session.commit()
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("execution-record", f"persist skipped: {exc}")
 
 
 def _run_short_term(req: ShortTermRequest) -> None:
@@ -375,6 +545,329 @@ def _run_strategy_backtest_export(req: StrategyBacktestRequest) -> None:
         _update(action, state="error", progress=0, message=str(exc), append_log=str(exc))
 
 
+def _run_data_sync(req: DataSyncRequest) -> None:
+    action = "data-sync"
+    try:
+        _update(action, state="running", progress=10, message="初始化資料庫與同步任務…", append_log="init data sync")
+        try:
+            from app.data.sync_service import SyncService
+            from app.db.repository import TradingRepository
+            from app.db.session import get_session_factory, init_db
+        except ModuleNotFoundError as exc:
+            missing = getattr(exc, "name", "") or str(exc)
+            raise RuntimeError(f"缺少依賴：{missing}，請使用同一個 Python 環境安裝 requirements.txt") from exc
+
+        init_db()
+        end_date = datetime.strptime(req.end_date, "%Y-%m-%d").date() if req.end_date else datetime.now().date()
+        start_date = datetime.strptime(req.start_date, "%Y-%m-%d").date() if req.start_date else (end_date - timedelta(days=365))
+        symbols = _parse_symbols_csv(req.symbols)
+
+        _update(action, progress=45, message="同步 FinMind 市場資料…", append_log=f"{start_date}~{end_date} symbols={symbols or '0050'}")
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            service = SyncService(repo=repo)
+            result = service.sync_market_bundle(
+                start_date=start_date,
+                end_date=end_date,
+                symbols=symbols,
+                include_bars=bool(req.include_bars),
+                include_institutional=bool(req.include_chip),
+                include_broker_agg=bool(req.include_broker_agg),
+                include_disposition=bool(req.include_disposition),
+            )
+            session.commit()
+
+        total = int(result.get("rows_upserted_total", 0))
+        partial = bool(result.get("partial_failure"))
+        msg = f"資料同步完成：{total} 筆" if not partial else f"資料同步完成（部分失敗）：{total} 筆"
+        _update(action, state="done", progress=100, message=msg, append_log=msg, result=result)
+    except Exception as exc:  # noqa: BLE001
+        _update(action, state="error", progress=0, message=str(exc), append_log=str(exc))
+
+
+def _run_feature_rebuild(req: FeatureRebuildRequest) -> None:
+    action = "feature-rebuild"
+    try:
+        _update(action, state="running", progress=10, message="準備重建特徵快照…", append_log="init feature rebuild")
+        try:
+            from app.db.repository import TradingRepository
+            from app.db.session import get_session_factory, init_db
+            from app.features.snapshot_builder import rebuild_feature_snapshots
+        except ModuleNotFoundError as exc:
+            missing = getattr(exc, "name", "") or str(exc)
+            raise RuntimeError(f"缺少依賴：{missing}，請使用同一個 Python 環境安裝 requirements.txt") from exc
+
+        init_db()
+        end_date = datetime.strptime(req.end_date, "%Y-%m-%d").date() if req.end_date else datetime.now().date()
+        start_date = datetime.strptime(req.start_date, "%Y-%m-%d").date() if req.start_date else (end_date - timedelta(days=365))
+        symbols = _parse_symbols_csv(req.symbols)
+
+        _update(action, progress=55, message="計算技術/籌碼/處置特徵…", append_log=f"{start_date}~{end_date} symbols={symbols or '0050'}")
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            result = rebuild_feature_snapshots(
+                repo=repo,
+                start_date=start_date,
+                end_date=end_date,
+                symbols=symbols,
+            )
+            session.commit()
+
+        rows = int(result.get("rows_upserted", 0))
+        failed_count = int(result.get("failed_count", 0))
+        msg = f"特徵重建完成：{rows} 筆" if failed_count == 0 else f"特徵重建完成（失敗 {failed_count} 檔）"
+        _update(action, state="done", progress=100, message=msg, append_log=msg, result=result)
+    except Exception as exc:  # noqa: BLE001
+        _update(action, state="error", progress=0, message=str(exc), append_log=str(exc))
+
+
+def _run_signal_preview(req: SignalPreviewRequest) -> None:
+    action = "signal-preview"
+    try:
+        _update(action, state="running", progress=15, message="計算今日訊號建議…", append_log="run signal preview")
+        try:
+            from app.db.repository import TradingRepository
+            from app.db.session import get_session_factory, init_db
+            from app.services.trading_workflow import SignalPreviewWorkflow, build_signal_preview_payload
+        except ModuleNotFoundError as exc:
+            missing = getattr(exc, "name", "") or str(exc)
+            raise RuntimeError(f"缺少依賴：{missing}，請使用同一個 Python 環境安裝 requirements.txt") from exc
+
+        init_db()
+        trade_date_mode = str(req.trade_date_mode or "T").strip().upper()
+        if trade_date_mode not in {"T", "T-1"}:
+            trade_date_mode = "T"
+        if req.trade_date:
+            trade_date = datetime.strptime(req.trade_date, "%Y-%m-%d").date()
+        else:
+            offset_days = 1 if trade_date_mode == "T-1" else 0
+            trade_date = (datetime.now() - timedelta(days=offset_days)).date()
+        rank_by = str(req.rank_by or "score").strip()
+        chip_threshold_mode = str(req.chip_threshold_mode or "absolute").strip().lower()
+        max_open_positions = int(req.max_open_positions) if req.max_open_positions is not None else None
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            result = build_signal_preview_payload(
+                repo=repo,
+                request=SignalPreviewWorkflow(
+                    trade_date=trade_date,
+                    available_cash=float(req.available_cash),
+                    max_symbols=int(req.max_symbols),
+                    require_chip=bool(req.require_chip),
+                    block_disposition=bool(req.block_disposition),
+                    rank_by=rank_by,
+                    max_open_positions=max_open_positions,
+                    data_freshness_required=bool(req.data_freshness_required),
+                    chip_threshold_mode=chip_threshold_mode,
+                ),
+            )
+        result["trade_date_mode"] = trade_date_mode if not req.trade_date else "explicit"
+        _update(action, state="done", progress=100, message=result["message"], append_log=result["message"], result=result)
+    except Exception as exc:  # noqa: BLE001
+        _update(action, state="error", progress=0, message=str(exc), append_log=str(exc))
+
+
+def _run_paper_ledger(req: PaperLedgerRequest) -> None:
+    action = "paper-ledger"
+    try:
+        _update(action, state="running", progress=10, message="準備帳本模擬參數…", append_log="初始化 paper ledger")
+        try:
+            from app.data.sync_service import SyncService
+            from app.db.repository import TradingRepository
+            from app.db.session import get_session_factory, init_db
+            from app.paper.ledger import PaperLedgerConfig, export_paper_ledger_report, run_symbol_paper_ledger
+        except ModuleNotFoundError as exc:
+            missing = getattr(exc, "name", "") or str(exc)
+            raise RuntimeError(f"缺少依賴：{missing}，請使用同一個 Python 環境安裝 requirements.txt") from exc
+
+        # Ensure DB schema exists (daily_bars / instruments / ...).
+        init_db()
+
+        end_date = datetime.strptime(req.end_date, "%Y-%m-%d").date() if req.end_date else datetime.now().date()
+        start_date = datetime.strptime(req.start_date, "%Y-%m-%d").date() if req.start_date else (end_date - timedelta(days=365))
+        config = PaperLedgerConfig(
+            initial_cash=float(req.initial_cash),
+            hold_days=int(req.hold_days),
+            settlement_days=int(req.settlement_days),
+            force_close_end=bool(req.force_close_end),
+        )
+
+        _update(action, progress=35, message="讀取資料庫歷史資料…", append_log=f"symbol={req.symbol} {start_date}~{end_date}")
+        session_factory = get_session_factory()
+        auto_sync_result: dict[str, Any] | None = None
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            simulation = run_symbol_paper_ledger(
+                repo=repo,
+                symbol=req.symbol,
+                start_date=start_date,
+                end_date=end_date,
+                config=config,
+            )
+
+        if not simulation.get("passed"):
+            message = str(simulation.get("message") or "模擬失敗")
+            if message == "no_data":
+                symbol_code = _normalize_tw_symbol(req.symbol)
+                _update(action, progress=55, message="找不到歷史資料，嘗試自動同步 daily bars…", append_log=f"auto-sync {symbol_code}")
+                with session_factory() as session:
+                    repo = TradingRepository(session)
+                    sync_service = SyncService(repo=repo)
+                    auto_sync_result = sync_service.sync_daily_bars(
+                        start_date=start_date,
+                        end_date=end_date,
+                        symbols=[symbol_code],
+                    )
+                    session.commit()
+                synced_rows = int(auto_sync_result.get("rows_upserted") or 0)
+                failed_count = int(auto_sync_result.get("failed_count") or 0)
+                _update(
+                    action,
+                    progress=70,
+                    message=f"自動同步完成：{synced_rows} 筆",
+                    append_log=f"auto-sync rows={synced_rows}, failed={failed_count}",
+                )
+
+                if synced_rows > 0:
+                    _update(action, progress=80, message="重新執行帳本模擬…", append_log="retry paper ledger")
+                    with session_factory() as session:
+                        repo = TradingRepository(session)
+                        simulation = run_symbol_paper_ledger(
+                            repo=repo,
+                            symbol=req.symbol,
+                            start_date=start_date,
+                            end_date=end_date,
+                            config=config,
+                        )
+
+                if not simulation.get("passed"):
+                    simulation["next_steps"] = [
+                        "確認 data/stock_data 內有對應 parquet（例如 2330.TW_1d.parquet）",
+                        "手動同步：python -m app.cli sync-bars --start-date 2024-01-01 --symbols 2330",
+                        "重新執行模擬本金帳本",
+                    ]
+                    message = "資料庫無該標的歷史資料，且自動同步未取得可用資料"
+
+            if not simulation.get("passed"):
+                _update(action, state="done", progress=100, message=message, append_log=message, result=simulation)
+                return
+
+        _update(action, progress=75, message="輸出 HTML/CSV/JSON 報表…", append_log="寫入 reports 檔案")
+        export = export_paper_ledger_report(simulation, output_dir=REPORTS_DIR, symbol=req.symbol)
+        summary = simulation.get("summary", {})
+        result = {
+            "passed": True,
+            "symbol": summary.get("symbol", req.symbol),
+            "message": "模擬帳本已完成，請查看 html_report",
+            "summary": summary,
+            "export": export,
+            "trades_preview": simulation.get("trades", [])[-10:],
+            "snapshots_preview": simulation.get("snapshots", [])[-10:],
+        }
+        if auto_sync_result is not None:
+            result["sync_result"] = auto_sync_result
+        html_url = export.get("urls", {}).get("html_report", "")
+        done_msg = f"模擬帳本完成：{summary.get('trade_count', 0)} 筆交易"
+        _update(action, state="done", progress=100, message=done_msg, append_log=f"{done_msg} | {html_url}", result=result)
+    except Exception as exc:  # noqa: BLE001
+        _update(action, state="error", progress=0, message=str(exc), append_log=str(exc))
+
+
+def _run_invest_pipeline(req: OneClickPipelineRequest) -> None:
+    action = "invest-pipeline"
+    try:
+        _update(action, state="running", progress=8, message="初始化一鍵流程…", append_log="init one-click pipeline")
+        try:
+            from app.data.sync_service import SyncService
+            from app.db.repository import TradingRepository
+            from app.db.session import get_session_factory, init_db
+            from app.pipeline import InvestPipelineService
+            from app.pipeline import OneClickPipelineRequest as PipelineRequest
+        except ModuleNotFoundError as exc:
+            missing = getattr(exc, "name", "") or str(exc)
+            raise RuntimeError(f"缺少依賴：{missing}，請使用同一個 Python 環境安裝 requirements.txt") from exc
+
+        init_db()
+        session_factory = get_session_factory()
+
+        def _progress(progress: int, message: str, append_log: str | None = None) -> None:
+            _update(action, progress=progress, message=message, append_log=append_log)
+
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            sync_service = SyncService(repo=repo)
+            service = InvestPipelineService(repo=repo, sync_service=sync_service)
+            symbols = _parse_symbols_csv(req.symbols_csv)
+            result = service.run(
+                PipelineRequest(
+                    trade_date=req.trade_date,
+                    target_count=int(req.target_count),
+                    risk_profile=str(req.risk_profile),
+                    universe=str(req.universe),
+                    data_freshness_required=bool(req.data_freshness_required),
+                    symbols=symbols,
+                ),
+                progress_hook=_progress,
+            )
+            session.commit()
+        count = len(result.get("candidates") or [])
+        message = f"一鍵流程完成：輸出 {count} 檔候選"
+        _update(action, state="done", progress=100, message=message, append_log=message, result=result)
+    except Exception as exc:  # noqa: BLE001
+        _update(action, state="error", progress=0, message=str(exc), append_log=str(exc))
+
+
+def _run_daily_radar(req: DailyRadarRequest) -> None:
+    action = "daily-radar"
+    try:
+        _update(action, state="running", progress=6, message="初始化每日雷達…", append_log="init daily radar")
+        try:
+            from app.data.sync_service import SyncService
+            from app.db.repository import TradingRepository
+            from app.db.session import get_session_factory, init_db
+            from app.pipeline import DailyRadarRequest as RadarRequest
+            from app.pipeline import DailyRadarService
+        except ModuleNotFoundError as exc:
+            missing = getattr(exc, "name", "") or str(exc)
+            raise RuntimeError(f"缺少依賴：{missing}，請使用同一個 Python 環境安裝 requirements.txt") from exc
+
+        init_db()
+        session_factory = get_session_factory()
+
+        def _progress(progress: int, message: str, append_log: str | None = None) -> None:
+            _update(action, progress=progress, message=message, append_log=append_log)
+
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            sync_service = SyncService(repo=repo)
+            service = DailyRadarService(repo=repo, sync_service=sync_service)
+            symbols = _parse_symbols_csv(req.symbols_csv)
+            result = service.run(
+                RadarRequest(
+                    trade_date=req.trade_date,
+                    target_count=int(req.target_count),
+                    risk_profile=str(req.risk_profile),
+                    universe=str(req.universe),
+                    data_freshness_required=bool(req.data_freshness_required),
+                    symbols=symbols,
+                ),
+                progress_hook=_progress,
+            )
+            session.commit()
+
+        count = len(result.get("items") or [])
+        labels = result.get("label_counts") or {}
+        ready = int(labels.get("ENTRY_READY", 0) or 0)
+        watch = int(labels.get("WATCH_WAIT_TRIGGER", 0) or 0)
+        message = f"每日雷達完成：{count} 檔（可進場 {ready} / 觀察 {watch}）"
+        _update(action, state="done", progress=100, message=message, append_log=message, result=result)
+    except Exception as exc:  # noqa: BLE001
+        _update(action, state="error", progress=0, message=str(exc), append_log=str(exc))
+
+
 def _run_account_balance(req: AccountBalanceRequest) -> None:
     action = "account-balance"
     try:
@@ -471,6 +964,7 @@ def _build_test_config(req: ShioajiTestRequest) -> OrderTestConfig:
         futures_price=req.futures_price,
         interval_sec=req.interval_sec,
         allow_live_order=req.allow_live_order,
+        live_order_nonce=req.live_order_nonce,
     )
 
 
@@ -495,6 +989,7 @@ def _run_shioaji_stock_test(req: ShioajiTestRequest) -> None:
             return
         _update(action, progress=35, message="執行證券下單測試…", append_log="執行 stock order test")
         result = SHIOAJI_SERVICE.run_stock_order_test(_build_test_config(req))
+        _persist_execution_payload(result)
         _finalize_test_result(action, result)
     except Exception as exc:  # noqa: BLE001
         _update(action, state="error", progress=0, message=str(exc), append_log=str(exc))
@@ -523,6 +1018,9 @@ def _run_shioaji_simulation_suite(req: ShioajiTestRequest) -> None:
             return
         _update(action, progress=25, message="執行模擬整套測試…", append_log="執行 simulation suite")
         result = SHIOAJI_SERVICE.run_simulation_suite(_build_test_config(req))
+        checks = result.get("checks") if isinstance(result, dict) else {}
+        if isinstance(checks, dict):
+            _persist_execution_payload(checks.get("stock_order"))
         _finalize_test_result(action, result)
     except Exception as exc:  # noqa: BLE001
         _update(action, state="error", progress=0, message=str(exc), append_log=str(exc))
@@ -557,7 +1055,27 @@ def _tail_log(lines: int = 200) -> List[str]:
 def _start_action(action: str, target, req, busy_error: str, accepted_message: str) -> JSONResponse:
     if _is_running(action):
         return JSONResponse({"status": "error", "error": busy_error})
-    thread = threading.Thread(target=target, args=(req,), daemon=True)
+
+    with _active_action_lock:
+        if len(_active_actions) >= MAX_ACTIVE_ACTIONS:
+            return JSONResponse(
+                {
+                    "status": "error",
+                    "error": "control panel task queue is full",
+                    "code": "task_queue_full",
+                },
+                status_code=429,
+            )
+        _active_actions.add(action)
+
+    def _wrapped_target(payload) -> None:
+        try:
+            target(payload)
+        finally:
+            with _active_action_lock:
+                _active_actions.discard(action)
+
+    thread = threading.Thread(target=_wrapped_target, args=(req,), daemon=True)
     thread.start()
     _update(action, state="running", progress=1, message="已排程…", append_log=f"收到 {action} 請求")
     return JSONResponse({"status": "ok", "message": accepted_message})
@@ -612,7 +1130,127 @@ def get_log() -> JSONResponse:
 
 @app.get("/api/shioaji/env")
 def shioaji_env() -> JSONResponse:
-    return JSONResponse({"status": "ok", "data": SHIOAJI_GATEWAY.env_status()})
+    return JSONResponse({"status": "ok", "data": redact_sensitive(SHIOAJI_GATEWAY.env_status())})
+
+
+@app.get("/api/finmind/usage")
+def finmind_usage() -> JSONResponse:
+    try:
+        from app.data.finmind_client import FinMindClient
+
+        client = FinMindClient()
+        data = client.fetch_user_info()
+        return JSONResponse({"status": "ok", "data": data})
+    except ModuleNotFoundError as exc:
+        missing = getattr(exc, "name", "") or str(exc)
+        return JSONResponse({"status": "error", "error": f"缺少依賴：{missing}，請安裝 requirements.txt"}, status_code=500)
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("finmind-usage", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.get("/api/data/health")
+def data_health(symbol: str = "2330") -> JSONResponse:
+    try:
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
+        init_db()
+        code = _normalize_tw_symbol(symbol)
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            bars = repo.get_daily_bars(symbol=code)
+            chip = repo.get_institutional_chip(symbol=code) if hasattr(repo, "get_institutional_chip") else []
+            broker = repo.get_broker_agg(symbol=code) if hasattr(repo, "get_broker_agg") else []
+            disposition = repo.get_disposition_periods(symbol=code) if hasattr(repo, "get_disposition_periods") else []
+            features = repo.get_feature_snapshots(symbol=code) if hasattr(repo, "get_feature_snapshots") else []
+        data = {
+            "symbol": code,
+            "daily_bars_count": len(bars),
+            "institutional_chip_count": len(chip),
+            "broker_agg_count": len(broker),
+            "disposition_periods_count": len(disposition),
+            "feature_snapshots_count": len(features),
+            "latest_bar_date": bars[-1].date.isoformat() if bars else None,
+            "latest_feature_date": features[-1].date.isoformat() if features else None,
+        }
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("data-health", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.get("/api/candidates/latest")
+def latest_candidates(count: int = 10) -> JSONResponse:
+    try:
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
+        init_db()
+        limit = max(1, min(50, int(count or 10)))
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            data = repo.get_latest_candidates(count=limit)
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("latest-candidates", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.get("/api/radar/latest")
+def latest_radar(count: int = 20) -> JSONResponse:
+    try:
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
+        init_db()
+        limit = max(1, min(50, int(count or 20)))
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            data = repo.get_latest_daily_radar(count=limit)
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("latest-radar", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.get("/api/watch-pool")
+def watch_pool(limit: int = 50, active_only: bool = True) -> JSONResponse:
+    try:
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
+        init_db()
+        max_rows = max(1, min(200, int(limit or 50)))
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            data = repo.get_watch_pool(limit=max_rows, active_only=bool(active_only))
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("watch-pool", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.get("/api/pipeline/runs")
+def pipeline_runs(limit: int = 20) -> JSONResponse:
+    try:
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
+        init_db()
+        max_rows = max(1, min(100, int(limit or 20)))
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            data = repo.get_pipeline_runs(limit=max_rows)
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("pipeline-runs", _safe_error_text(exc))
+        return _safe_error_response()
 
 
 @app.get("/api/strategy/default")
@@ -625,13 +1263,20 @@ def strategy_backtest_export(req: StrategyBacktestRequest) -> JSONResponse:
     try:
         cfg = _build_strategy_config(req)
         data = STRATEGY_SERVICE.run_multi_strategy_backtest_export(cfg, output_dir=REPORTS_DIR)
+        if data.get("error") == "invalid_config":
+            return JSONResponse({"status": "error", "error": data["message"], "code": "invalid_config"}, status_code=400)
         return JSONResponse({"status": "ok", "data": data})
     except Exception as exc:  # noqa: BLE001
-        return JSONResponse({"status": "error", "error": str(exc)}, status_code=500)
+        _append_log_line("strategy-backtest-export", _safe_error_text(exc))
+        return _safe_error_response()
 
 
 @app.post("/api/echo")
 async def echo(request: Request) -> JSONResponse:
+    client_host = request.client.host if request.client else ""
+    debug_enabled = os.getenv("CONTROL_PANEL_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+    if not debug_enabled or not _is_loopback_host(client_host):
+        return JSONResponse({"status": "error", "error": "debug endpoint disabled"}, status_code=404)
     payload = await request.json()
     return JSONResponse({"status": "ok", "data": payload})
 
@@ -676,6 +1321,72 @@ def run_strategy_backtest_export(req: StrategyBacktestRequest) -> JSONResponse:
         req,
         "回測匯出正在執行中",
         "回測匯出開始執行",
+    )
+
+
+@app.post("/api/run/data-sync")
+def run_data_sync(req: DataSyncRequest) -> JSONResponse:
+    return _start_action(
+        "data-sync",
+        _run_data_sync,
+        req,
+        "資料同步正在執行中",
+        "資料同步開始執行",
+    )
+
+
+@app.post("/api/run/feature-rebuild")
+def run_feature_rebuild(req: FeatureRebuildRequest) -> JSONResponse:
+    return _start_action(
+        "feature-rebuild",
+        _run_feature_rebuild,
+        req,
+        "特徵重建正在執行中",
+        "特徵重建開始執行",
+    )
+
+
+@app.post("/api/run/signal-preview")
+def run_signal_preview(req: SignalPreviewRequest) -> JSONResponse:
+    return _start_action(
+        "signal-preview",
+        _run_signal_preview,
+        req,
+        "訊號預覽正在執行中",
+        "訊號預覽開始執行",
+    )
+
+
+@app.post("/api/run/paper-ledger")
+def run_paper_ledger(req: PaperLedgerRequest) -> JSONResponse:
+    return _start_action(
+        "paper-ledger",
+        _run_paper_ledger,
+        req,
+        "模擬帳本正在執行中",
+        "模擬帳本開始執行",
+    )
+
+
+@app.post("/api/run/invest-pipeline")
+def run_invest_pipeline(req: OneClickPipelineRequest) -> JSONResponse:
+    return _start_action(
+        "invest-pipeline",
+        _run_invest_pipeline,
+        req,
+        "一鍵流程正在執行中",
+        "一鍵流程開始執行",
+    )
+
+
+@app.post("/api/run/daily-radar")
+def run_daily_radar(req: DailyRadarRequest) -> JSONResponse:
+    return _start_action(
+        "daily-radar",
+        _run_daily_radar,
+        req,
+        "每日雷達正在執行中",
+        "每日雷達開始執行",
     )
 
 
@@ -741,9 +1452,4 @@ def run_shioaji_verify_production(req: ShioajiTestRequest) -> JSONResponse:
     )
 
 
-app.mount("/reports", StaticFiles(directory="reports"), name="reports")
-
-
-@app.on_event("startup")
-def _startup_log() -> None:
-    _append_log_line("server", "control panel started")
+app.mount("/reports", StaticFiles(directory=REPORTS_DIR), name="reports")

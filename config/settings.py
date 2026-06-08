@@ -8,8 +8,14 @@ DEFAULT_SETTINGS = {
     'BACKTEST': {
         'INITIAL_CAPITAL': 1_000_000,  # 起始資金
         'COMMISSION_RATE': 0.001425,   # 手續費率 (買賣各收 0.1425%)
+        'MIN_COMMISSION_FEE': 20.0,    # 最低手續費（元）
         'TAX_RATE': 0.003,           # 證券交易稅 (賣出時收取 0.3%)
-        'SLIPPAGE': 0.01,            # 滑價 (假設每次交易有 0.1% 的滑價)
+        'SLIPPAGE': 0.001,           # 滑價 (假設每次交易有 0.1% 的滑價)
+        'MAX_GAP_FOR_ENTRY': 0.07,   # 進場跳空超過門檻則延後成交
+        'MIN_DAILY_VOLUME_FOR_FILL': 0,  # 低於門檻視為流動性不足（0 代表不限制）
+        'LIMIT_DOWN_FACTOR': 0.90,   # 跌停價近似比例（壓力情境模擬）
+        'LIMIT_UP_FACTOR': 1.10,     # 漲停價近似比例（壓力情境模擬）
+        'MAX_ENTRY_DELAY_DAYS': 3,   # 訊號待成交最大延遲日數
     },
     
     # 風險管理設定

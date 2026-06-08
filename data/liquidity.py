@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import json
+import os
 import ssl
 import sys
 import urllib.request
@@ -41,6 +42,9 @@ def _fetch_twse_daily_all() -> dict:
         with urllib.request.urlopen(TWSE_DAILY_ALL_URL, timeout=30, context=_build_ssl_context()) as resp:
             raw = resp.read().decode("utf-8")
     except Exception as e:
+        allow_insecure = os.getenv("ALLOW_INSECURE_MARKET_DATA", "").strip().lower() in {"1", "true", "yes", "on"}
+        if not allow_insecure:
+            raise RuntimeError("SSL verify failed and ALLOW_INSECURE_MARKET_DATA is not enabled") from e
         print(f"[WARN] SSL verify failed, fallback to unverified context: {e}", file=sys.stderr)
         with urllib.request.urlopen(TWSE_DAILY_ALL_URL, timeout=30, context=ssl._create_unverified_context()) as resp:
             raw = resp.read().decode("utf-8")

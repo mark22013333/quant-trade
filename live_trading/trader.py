@@ -15,12 +15,14 @@ import queue
 # 將父目錄加入路徑以便引用其他模組
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from app.execution import OrderIntent
+
 class LiveTrader:
     """
     實時交易主控
     負責協調策略、資料提供者和券商，執行實時交易
     """
-    def __init__(self, strategy, broker, data_provider, symbols, risk_manager=None):
+    def __init__(self, strategy, broker, data_provider, symbols, risk_manager=None, execution_service=None):
         """
         初始化實時交易主控
         :param strategy: 交易策略
@@ -34,6 +36,7 @@ class LiveTrader:
         self.data_provider = data_provider
         self.symbols = symbols if isinstance(symbols, list) else [symbols]
         self.risk_manager = risk_manager
+        self.execution_service = execution_service
         
         self.is_running = False
         self.thread = None
@@ -116,6 +119,8 @@ class LiveTrader:
             self.logger.info("連接券商...")
             if self.broker.connect():
                 self.logger.info("券商連接成功")
+                if self.execution_service is None and hasattr(self.broker, "execution_service"):
+                    self.execution_service = self.broker.execution_service
             else:
                 self.logger.error("券商連接失敗")
                 raise ConnectionError("無法連接券商")
@@ -305,24 +310,50 @@ class LiveTrader:
                 else:
                     max_position_size = int(cash * 0.2 / price)  # 預設使用 20% 資金
                 
+                if self.execution_service is None:
+                    self.logger.error("交易安全管線未初始化，拒絕執行交易: %s", symbol)
+                    continue
+
                 # 執行買入
                 if target_position > 0 and current_position == 0:
                     quantity = max_position_size
                     if quantity > 0:
                         self.logger.info(f"買入訊號: {symbol} 數量: {quantity} 價格: {price}")
-                        if self.broker.place_order(datetime.now(), price, quantity, 'buy', symbol):
+                        intent = OrderIntent(
+                            source="live_trader",
+                            environment="simulation" if getattr(self.broker, "simulation", True) else "live",
+                            symbol=symbol,
+                            side="buy",
+                            price=float(price),
+                            quantity=int(quantity),
+                            order_lot="IntradayOdd",
+                            strategy_name=type(self.strategy).__name__,
+                        )
+                        result = self.execution_service.execute_intent(intent)
+                        if result.executed:
                             self.logger.info(f"買入委託成功: {symbol}")
                         else:
-                            self.logger.error(f"買入委託失敗: {symbol}")
+                            self.logger.error(f"買入委託被拒絕: {symbol} reason={result.pretrade.reason}")
                 
                 # 執行賣出
                 elif target_position <= 0 and current_position > 0:
                     quantity = current_position
                     self.logger.info(f"賣出訊號: {symbol} 數量: {quantity} 價格: {price}")
-                    if self.broker.place_order(datetime.now(), price, quantity, 'sell', symbol):
+                    intent = OrderIntent(
+                        source="live_trader",
+                        environment="simulation" if getattr(self.broker, "simulation", True) else "live",
+                        symbol=symbol,
+                        side="sell",
+                        price=float(price),
+                        quantity=int(quantity),
+                        order_lot="IntradayOdd",
+                        strategy_name=type(self.strategy).__name__,
+                    )
+                    result = self.execution_service.execute_intent(intent)
+                    if result.executed:
                         self.logger.info(f"賣出委託成功: {symbol}")
                     else:
-                        self.logger.error(f"賣出委託失敗: {symbol}")
+                        self.logger.error(f"賣出委託被拒絕: {symbol} reason={result.pretrade.reason}")
                         
         except Exception as e:
             self.logger.error(f"執行交易時發生錯誤: {str(e)}")

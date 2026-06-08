@@ -8,6 +8,8 @@ import shioaji as sj
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+from app.broker.shioaji_gateway import ShioajiConfig, ShioajiGateway
+from app.execution import OrderIntent, TradingExecutionService
 from .broker_interface import BrokerInterface
 
 class ShioajiBroker(BrokerInterface):
@@ -27,6 +29,7 @@ class ShioajiBroker(BrokerInterface):
         self.positions = {}
         self.orders = {}
         self.trades = {}
+        self.execution_service = None
     
     def connect(self):
         """
@@ -40,6 +43,7 @@ class ShioajiBroker(BrokerInterface):
         api_key = os.getenv("SHIOAJI_APIKEY")
         api_secret = os.getenv("SHIOAJI_SECRET")
         ca_path = os.getenv("SHIOAJI_CA_PATH")
+        ca_password = os.getenv("SHIOAJI_CA_PASSWORD")
         ca_person_id = os.getenv("SHIOAJI_CA_PERSON_ID")
         
         if not api_key or not api_secret:
@@ -58,8 +62,15 @@ class ShioajiBroker(BrokerInterface):
             )
             
             # 如果有設定憑證，啟用憑證
-            if ca_path and ca_person_id:
-                self.api.activate_ca(ca_path=ca_path, ca_passwd=ca_person_id)
+            if ca_path and ca_password:
+                ca_kwargs = {"ca_path": ca_path, "ca_passwd": ca_password}
+                if ca_person_id:
+                    ca_kwargs["person_id"] = ca_person_id
+                try:
+                    self.api.activate_ca(**ca_kwargs)
+                except TypeError:
+                    ca_kwargs.pop("person_id", None)
+                    self.api.activate_ca(**ca_kwargs)
                 print("憑證啟用成功")
             
             self._connected = True
@@ -67,6 +78,15 @@ class ShioajiBroker(BrokerInterface):
             
             # 設定預設帳戶
             self.stock_account = self.api.stock_account
+            gateway = ShioajiGateway(
+                ShioajiConfig(
+                    simulation=bool(self.simulation),
+                    allow_live_order=not bool(self.simulation),
+                    live_order_nonce=os.getenv("SHIOAJI_LIVE_ORDER_NONCE_INPUT", ""),
+                )
+            )
+            gateway.api = self.api
+            self.execution_service = TradingExecutionService(gateway=gateway)
             
             return True
             
@@ -107,51 +127,33 @@ class ShioajiBroker(BrokerInterface):
         :param symbol: 股票代號，例如 '2330' 或 '2330.TW'
         """
         self._ensure_connected()
-        
-        # 移除 symbol 尾端的 .TW
-        if '.TW' in symbol:
-            symbol = symbol.replace('.TW', '')
-        
-        try:
-            # 取得合約資訊
-            contract = self.api.Contracts.Stocks[symbol]
-            
-            # 建立委託單
-            action = sj.constant.Action.Buy if side.lower() == 'buy' else sj.constant.Action.Sell
-            price_type = sj.constant.StockPriceType.LMT  # 限價單
-            order_type = sj.constant.OrderType.ROD  # 當日有效單
-            
-            order = self.api.Order(
-                price=price,
-                quantity=quantity,
-                action=action,
-                price_type=price_type,
-                order_type=order_type,
-                account=self.stock_account
-            )
-            
-            # 下單
-            trade = self.api.place_order(contract, order)
-            
-            # 儲存訂單資訊
-            order_id = trade.order.id
-            self.orders[order_id] = {
-                'contract': contract,
-                'order': order,
-                'trade': trade,
-                'status': 'placed',
-                'time': datetime.now()
+        if self.execution_service is None:
+            raise RuntimeError("交易安全管線未初始化，拒絕透過舊 broker 直接下單")
+
+        intent = OrderIntent(
+            source="live_trader",
+            environment="simulation" if self.simulation else "live",
+            symbol=symbol,
+            side="buy" if str(side).lower() == "buy" else "sell",
+            price=float(price),
+            quantity=int(quantity),
+            order_lot="IntradayOdd",
+            metadata={"legacy_broker": True, "requested_at": str(date)},
+        )
+        result = self.execution_service.execute_intent(intent)
+        if result.executed:
+            result_payload = result.to_dict() if hasattr(result, "to_dict") else dict(vars(result))
+            self.orders[intent.intent_id] = {
+                "intent": intent.to_dict(),
+                "result": result_payload,
+                "status": getattr(result, "status", "executed"),
+                "time": datetime.now(),
             }
-            
-            # 若為非模擬環境，等待 1 秒避免 API 限流
             if not self.simulation:
                 time.sleep(1)
-            
             return True
-            
-        except Exception as e:
-            print(f"下單失敗 ({symbol} {side} {quantity} @ {price}): {str(e)}")
-            return False
+        print(f"下單被安全管線拒絕 ({symbol} {side} {quantity} @ {price}): {result.pretrade.reason}")
+        return False
     
     def get_balance(self):
         """

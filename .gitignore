@@ -201,6 +201,10 @@ marimo/_lsp/
 __marimo__/
 
 # Data
+*.db
+*.sqlite
+*.sqlite3
+*.log
 *.csv
 *.tsv
 *.json

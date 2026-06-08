@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 import io
+import os
 import ssl
 import sys
 import pandas as pd
@@ -41,6 +42,9 @@ def _download_bytes(url: str) -> bytes:
         with urllib.request.urlopen(url, timeout=30, context=_build_ssl_context()) as resp:
             return resp.read()
     except Exception as e:
+        allow_insecure = os.getenv("ALLOW_INSECURE_MARKET_DATA", "").strip().lower() in {"1", "true", "yes", "on"}
+        if not allow_insecure:
+            raise RuntimeError("SSL verify failed and ALLOW_INSECURE_MARKET_DATA is not enabled") from e
         print(f"[WARN] SSL verify failed, fallback to unverified context: {e}", file=sys.stderr)
         with urllib.request.urlopen(url, timeout=30, context=ssl._create_unverified_context()) as resp:
             return resp.read()
