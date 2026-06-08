@@ -928,6 +928,21 @@
       setActiveTab(hashTab || storedTab || tabPanels[0].dataset.tabPanel);
     }
 
+    function isFilePreviewMode() {
+      return window.location.protocol === 'file:';
+    }
+
+    function showFilePreviewNotice() {
+      const message = '目前是直接開啟 HTML 檔案，API 查詢不會連到後端服務。請先執行 `.venv/bin/python run_web.py --host 127.0.0.1 --port 8765`，再開啟 http://127.0.0.1:8765。';
+      if (heartbeatEl) heartbeatEl.textContent = 'file preview mode';
+      document.querySelectorAll('.result, [data-status]').forEach((el) => {
+        if (!el.textContent || /Failed to fetch|等待|尚未|讀取失敗|執行中/.test(el.textContent)) {
+          el.textContent = message;
+        }
+      });
+      appendLog(message);
+    }
+
     function actionLabel(action) {
       return ACTION_LABELS[action] || action;
     }
@@ -2325,19 +2340,23 @@
     initTabs();
     updatePipelineTimeline(0, 'idle', null);
     renderStrategyWorkbench({});
-    refreshLatestCandidates(10);
-    refreshDailyRadar(20);
-    refreshWatchPool(50);
-    refreshPipelineRuns(20);
-    refreshReports();
-    refreshHeartbeat();
-    refreshServerLog();
-    refreshShioajiEnv();
-    refreshFinMindUsage();
-    refreshDataHealth();
-    setupFinMindAutoRefresh();
+    if (isFilePreviewMode()) {
+      showFilePreviewNotice();
+    } else {
+      refreshLatestCandidates(10);
+      refreshDailyRadar(20);
+      refreshWatchPool(50);
+      refreshPipelineRuns(20);
+      refreshReports();
+      refreshHeartbeat();
+      refreshServerLog();
+      refreshShioajiEnv();
+      refreshFinMindUsage();
+      refreshDataHealth();
+      setupFinMindAutoRefresh();
+      setInterval(refreshHeartbeat, 5000);
+    }
     loadStrategyDefaults();
-    setInterval(refreshHeartbeat, 5000);
   </script>
 </body>
 </html>
