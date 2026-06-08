@@ -35,20 +35,27 @@
 
     <div class="workspace-shell">
       <aside class="workspace-sidebar">
-        <div class="sidebar-title">Admin Navigation</div>
-        <div class="sidebar-subtitle">用頁籤切換模組，降低資訊干擾。</div>
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true"><span></span></div>
+          <div>
+            <div class="brand-name">AI TRADER</div>
+            <div class="brand-subtitle">台股 · 自動交易</div>
+          </div>
+        </div>
         <nav class="tab-nav" aria-label="主功能頁籤">
-          <button type="button" class="tab-btn active" data-tab-target="pipeline">一鍵候選精靈</button>
-          <button type="button" class="tab-btn" data-tab-target="strategy">策略工作台</button>
-          <button type="button" class="tab-btn" data-tab-target="guide">使用指南</button>
-          <button type="button" class="tab-btn" data-tab-target="shioaji">交易測試</button>
-          <button type="button" class="tab-btn" data-tab-target="account">帳戶資訊</button>
-          <button type="button" class="tab-btn" data-tab-target="automation">快速動作</button>
-          <button type="button" class="tab-btn" data-tab-target="logs">執行紀錄</button>
-          <button type="button" class="tab-btn" data-tab-target="reports">報表中心</button>
+          <button type="button" class="tab-btn active" data-tab-target="pipeline"><span class="nav-icon">⌁</span>AI 決策</button>
+          <button type="button" class="tab-btn" data-tab-target="strategy"><span class="nav-icon">□</span>指揮台</button>
+          <button type="button" class="tab-btn" data-tab-target="shioaji"><span class="nav-icon">≋</span>交易驗收</button>
+          <button type="button" class="tab-btn" data-tab-target="account"><span class="nav-icon">◷</span>我的部位</button>
+          <button type="button" class="tab-btn" data-tab-target="automation"><span class="nav-icon">↗</span>市場分析</button>
+          <button type="button" class="tab-btn" data-tab-target="reports"><span class="nav-icon">☰</span>交易紀錄</button>
+          <button type="button" class="tab-btn" data-tab-target="logs"><span class="nav-icon">≡</span>系統紀錄</button>
+          <button type="button" class="tab-btn" data-tab-target="guide"><span class="nav-icon">⚙</span>設定</button>
         </nav>
-        <div class="sidebar-hint">
-          每個測試區塊都保留可讀化卡片與原始 JSON，切換頁籤不會中斷執行中任務。
+        <div class="system-block">
+          <div class="system-label">SYSTEM</div>
+          <div class="system-status"><span class="system-dot"></span>已連線</div>
+          <div class="system-time">Asia/Taipei</div>
         </div>
       </aside>
 
