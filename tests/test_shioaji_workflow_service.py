@@ -30,6 +30,9 @@ class DummyGateway:
     def get_stock_contract(self, api, stock_code):
         return api.Contracts.Stocks[str(stock_code)]
 
+    def get_futures_contract(self, api, futures_code):
+        return api.Contracts.Futures[str(futures_code)]
+
     def pick_reference_price(self, contract, fallback=10.0):
         return getattr(contract, "reference", fallback)
 
@@ -222,6 +225,41 @@ def test_stock_order_execution_uses_order_intent_pipeline():
 
     assert result["passed"] is True
     assert result["intent"]["source"] == "web"
+    assert result["execution"]["executed"] is True
+    assert result["execution"]["raw_trade"]["token"] != "secret-token-value"
+    assert api.placed is not None
+
+
+def test_futures_order_execution_uses_order_intent_pipeline():
+    service = _build_service()
+
+    class Api:
+        def __init__(self):
+            self.futopt_account = SimpleNamespace(account_id="FUTURES-ACC")
+            self.Contracts = SimpleNamespace(
+                Futures={"TXF": SimpleNamespace(code="TXF", reference=18000.0, limit_down=17000.0, limit_up=19000.0)}
+            )
+            self.placed = None
+
+        def Order(self, **kwargs):
+            return SimpleNamespace(**kwargs)
+
+        def place_order(self, contract, order):
+            self.placed = (contract, order)
+            return SimpleNamespace(status=SimpleNamespace(status="Submitted"), token="secret-token-value")
+
+    api = Api()
+
+    result = service._execute_futures_order(
+        api=api,
+        futures_code="TXF",
+        quantity=1,
+        order_price=18000.0,
+        simulation=True,
+    )
+
+    assert result["passed"] is True
+    assert result["intent"]["metadata"]["instrument_type"] == "futures"
     assert result["execution"]["executed"] is True
     assert result["execution"]["raw_trade"]["token"] != "secret-token-value"
     assert api.placed is not None

@@ -196,6 +196,25 @@ class ShioajiGateway:
                 continue
         raise RuntimeError(f"stock contract not found: {code}")
 
+    def _get_futures_contract(self, symbol: str):
+        if self.api is None:
+            self.login()
+        code = self._normalize_symbol(symbol)
+        futures = getattr(getattr(self.api, "Contracts", None), "Futures", None)
+        if futures is None:
+            raise RuntimeError("unable to access Contracts.Futures")
+        for getter in (
+            lambda: futures[code],
+            lambda: getattr(futures, code)[code],
+            lambda: getattr(futures, "TXF", {})[code],
+            lambda: getattr(futures, "MXF", {})[code],
+        ):
+            try:
+                return getter()
+            except Exception:
+                continue
+        raise RuntimeError(f"futures contract not found: {code}")
+
     def resolve_order_price(self, symbol: str, explicit_price: float | None = None, price_offset_ticks: int = 0) -> float:
         if explicit_price is not None and float(explicit_price) > 0:
             base_price = float(explicit_price)
@@ -259,6 +278,32 @@ class ShioajiGateway:
             except TypeError:
                 order_kwargs.pop("account", None)
                 return self.api.Order(**order_kwargs)
+
+    def _build_futures_order(self, *, price: float, qty: int, account: Any, side: str = "buy"):
+        try:
+            import shioaji as sj
+        except Exception:  # noqa: BLE001
+            sj = None
+
+        action_buy = self._resolve_constant(sj, "Action", "Buy", "Buy")
+        action_sell = self._resolve_constant(sj, "Action", "Sell", "Sell")
+        price_type_lmt = self._resolve_constant(sj, "FuturesPriceType", "LMT", "LMT")
+        order_type_rod = self._resolve_constant(sj, "OrderType", "ROD", "ROD")
+        octype_auto = self._resolve_constant(sj, "FuturesOCType", "Auto", "Auto")
+        order_kwargs = {
+            "price": float(price),
+            "quantity": int(qty),
+            "action": action_sell if str(side).lower() == "sell" else action_buy,
+            "price_type": price_type_lmt,
+            "order_type": order_type_rod,
+            "octype": octype_auto,
+            "account": account,
+        }
+        try:
+            return self.api.Order(**order_kwargs)
+        except TypeError:
+            order_kwargs.pop("account", None)
+            return self.api.Order(**order_kwargs)
 
     @staticmethod
     def _extract_trade_status(trade: Any) -> str:
@@ -464,6 +509,115 @@ class ShioajiGateway:
             "trade": self._serialize(trade),
         }
 
+    def safe_place_futures_order(
+        self,
+        symbol: str,
+        current_price: float,
+        side: str = "buy",
+        quantity: int | None = None,
+        enforce_session_check: bool | None = None,
+        data_quality: DataQualityStatus | None = None,
+        require_chip: bool = False,
+    ) -> dict[str, Any]:
+        if self.api is None:
+            self.login()
+
+        checks: list[dict[str, Any]] = []
+        normalized_side = str(side or "buy").strip().lower()
+        if normalized_side not in {"buy", "sell"}:
+            raise PreTradeCheckError("pre-trade check rejected: unsupported_side")
+
+        live_unlock = validate_live_order_unlock(
+            LiveOrderUnlockConfig(
+                simulation=bool(self.config.simulation),
+                allow_live_order=bool(self.config.allow_live_order),
+                live_order_nonce=str(self.config.live_order_nonce or ""),
+            )
+        )
+        checks.append({"name": "live_order_unlock", "passed": bool(live_unlock.accepted), "reason": live_unlock.reason})
+        if not live_unlock.accepted:
+            raise PreTradeCheckError(f"pre-trade check rejected: {live_unlock.reason}")
+
+        quality = data_quality or DataQualityStatus()
+        data_quality_ok = not (not self.config.simulation and quality.blocks_live_order(require_chip=require_chip))
+        checks.append({"name": "data_quality", "passed": bool(data_quality_ok), "reason": quality.status})
+        checks.append({"name": "data_freshness", "passed": bool(data_quality_ok), "reason": quality.freshness_status})
+        if not data_quality_ok:
+            raise PreTradeCheckError(f"pre-trade check rejected: {quality.status}")
+
+        enforce_session = self.config.enforce_session_check if enforce_session_check is None else bool(enforce_session_check)
+        session_ok = (not enforce_session) or self._is_trading_session()
+        checks.append({"name": "trading_session", "passed": bool(session_ok), "enforced": bool(enforce_session)})
+        if not session_ok:
+            raise PreTradeCheckError("pre-trade check rejected: trading_session_closed")
+
+        price_ok = float(current_price) > 0
+        checks.append({"name": "tick_size", "passed": bool(price_ok), "reason": "positive_price"})
+        if not price_ok:
+            raise PreTradeCheckError("pre-trade check rejected: invalid_price")
+
+        if not self._check_daily_order_limit():
+            checks.append({"name": "daily_order_limit", "passed": False})
+            raise PreTradeCheckError("pre-trade check rejected: daily_order_limit")
+        checks.append({"name": "daily_order_limit", "passed": True})
+
+        approved_qty = int(quantity or 0)
+        quantity_ok = approved_qty > 0
+        checks.append({"name": "capital_guard_first", "passed": bool(quantity_ok), "reason": "futures_margin_external"})
+        if not quantity_ok:
+            raise PreTradeCheckError("pre-trade check rejected: invalid_quantity")
+
+        contract = self._get_futures_contract(symbol)
+        band_ok = self._is_within_price_band(contract, float(current_price))
+        checks.append({"name": "price_band", "passed": bool(band_ok)})
+        if not band_ok:
+            raise PreTradeCheckError("pre-trade check rejected: price_out_of_band")
+
+        duplicate_ok = not self._is_duplicate_order(symbol=symbol, qty=int(approved_qty), price=float(current_price))
+        checks.append({"name": "duplicate_order", "passed": bool(duplicate_ok)})
+        if not duplicate_ok:
+            raise PreTradeCheckError("pre-trade check rejected: duplicate_order")
+
+        checks.append({"name": "capital_guard_second", "passed": True, "reason": "futures_margin_external"})
+        checks.extend(
+            [
+                {"name": "position_limit", "passed": True, "reason": "not_enforced"},
+                {"name": "max_portfolio_exposure", "passed": True, "reason": "not_enforced"},
+                {"name": "disposition_stock_block", "passed": True, "reason": "not_applicable"},
+                {"name": "liquidity_threshold", "passed": True, "reason": "not_enforced"},
+            ]
+        )
+
+        account = getattr(self.api, "futopt_account", None) or getattr(self.api, "futures_account", None)
+        if account is None:
+            raise RuntimeError("futures account not found")
+        order = self._build_futures_order(
+            price=float(current_price),
+            qty=int(approved_qty),
+            account=account,
+            side=normalized_side,
+        )
+        trade = self.api.place_order(contract, order)
+        self._increase_daily_order_count()
+        self._mark_order_seen(symbol=symbol, qty=int(approved_qty), price=float(current_price))
+        status = self._extract_trade_status(trade)
+        return {
+            "passed": True,
+            "symbol": self._normalize_symbol(symbol),
+            "side": normalized_side,
+            "price": float(current_price),
+            "qty": int(approved_qty),
+            "estimated_total_cost": 0.0,
+            "available_cash_before": None,
+            "available_cash_before_order": None,
+            "simulation": self.config.simulation,
+            "order_lot": "Futures",
+            "status": status,
+            "data_quality_status": quality.status,
+            "pretrade_checks": checks,
+            "trade": self._serialize(trade),
+        }
+
     def execute_intent(
         self,
         intent: OrderIntent,
@@ -472,15 +626,25 @@ class ShioajiGateway:
         require_chip: bool = False,
     ) -> ExecutionResult:
         try:
-            payload = self.safe_place_stock_order(
-                symbol=intent.symbol,
-                current_price=float(intent.price),
-                side=intent.side,
-                quantity=int(intent.quantity) if intent.quantity is not None else None,
-                use_odd_lot=(intent.order_lot == "IntradayOdd"),
-                data_quality=data_quality,
-                require_chip=require_chip,
-            )
+            if str(intent.metadata.get("instrument_type") or "").lower() == "futures":
+                payload = self.safe_place_futures_order(
+                    symbol=intent.symbol,
+                    current_price=float(intent.price),
+                    side=intent.side,
+                    quantity=int(intent.quantity) if intent.quantity is not None else None,
+                    data_quality=data_quality,
+                    require_chip=require_chip,
+                )
+            else:
+                payload = self.safe_place_stock_order(
+                    symbol=intent.symbol,
+                    current_price=float(intent.price),
+                    side=intent.side,
+                    quantity=int(intent.quantity) if intent.quantity is not None else None,
+                    use_odd_lot=(intent.order_lot == "IntradayOdd"),
+                    data_quality=data_quality,
+                    require_chip=require_chip,
+                )
             pretrade = PreTradeDecision(
                 intent_id=intent.intent_id,
                 accepted=True,

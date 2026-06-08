@@ -144,6 +144,9 @@ class ShioajiWorkflowService:
                     futures_code=config.futures_code,
                     quantity=config.futures_quantity,
                     order_price=config.futures_price,
+                    simulation=config.simulation,
+                    allow_live_order=config.allow_live_order,
+                    live_order_nonce=config.live_order_nonce,
                 )
                 result["simulation"] = config.simulation
                 result["mode"] = _mode_text(config.simulation)
@@ -183,6 +186,9 @@ class ShioajiWorkflowService:
                     futures_code=config.futures_code,
                     quantity=config.futures_quantity,
                     order_price=config.futures_price,
+                    simulation=True,
+                    allow_live_order=False,
+                    live_order_nonce="",
                 )
                 passed = bool(login_ok["passed"] and stock_result.get("passed") and futures_result.get("passed"))
                 failed_checks = []
@@ -480,35 +486,55 @@ class ShioajiWorkflowService:
         )
         return {"accepted": result.accepted, "reason": result.reason, "message": result.message}
 
-    def _execute_futures_order(self, *, api, futures_code: str, quantity: int, order_price: float | None) -> Dict[str, Any]:
-        import shioaji as sj
-
-        account = self.gateway.pick_futures_account(api)
-        if account is None:
-            raise ShioajiGatewayError("找不到期貨帳戶，無法執行期貨下單測試")
+    def _execute_futures_order(
+        self,
+        *,
+        api,
+        futures_code: str,
+        quantity: int,
+        order_price: float | None,
+        simulation: bool = True,
+        allow_live_order: bool = False,
+        live_order_nonce: str = "",
+    ) -> Dict[str, Any]:
         contract = self.gateway.get_futures_contract(api, futures_code)
-        price = float(order_price) if isinstance(order_price, (int, float)) and order_price > 0 else self.gateway.pick_reference_price(contract, fallback=1.0)
-        order = api.Order(
-            price=price,
-            quantity=int(quantity),
-            action=sj.constant.Action.Buy,
-            price_type=sj.constant.FuturesPriceType.LMT,
-            order_type=sj.constant.OrderType.ROD,
-            octype=sj.constant.FuturesOCType.Auto,
-            account=account,
+        price = (
+            float(order_price)
+            if isinstance(order_price, (int, float)) and order_price > 0
+            else self.gateway.pick_reference_price(contract, fallback=1.0)
         )
-        trade = self.gateway.call_with_timeout(api.place_order, 15, contract, order)
-        self._update_order_status(api, account)
-        status = self.gateway.extract_trade_status(trade)
-        passed = status.upper() not in {"FAILED", "REJECTED", "CANCELLED"}
+        core_gateway = CoreShioajiGateway(
+            ShioajiConfig(
+                simulation=bool(simulation),
+                allow_live_order=bool(allow_live_order),
+                live_order_nonce=str(live_order_nonce or ""),
+            )
+        )
+        core_gateway.api = api
+        intent = OrderIntent(
+            source="web",
+            environment="simulation" if simulation else "live",
+            symbol=str(futures_code),
+            side="buy",
+            price=float(price),
+            quantity=int(quantity),
+            order_lot="Common",
+            metadata={"workflow": "shioaji_futures_order_test", "instrument_type": "futures"},
+        )
+        service = TradingExecutionService(gateway=core_gateway)
+        execution = service.execute_intent(intent)
+        status = execution.status
+        passed = bool(execution.executed) and status.upper() not in {"FAILED", "REJECTED", "CANCELLED"}
         return {
             "passed": passed,
             "message": "期貨下單測試通過" if passed else f"期貨下單狀態異常：{status}",
-            "futures_code": getattr(contract, "code", futures_code),
+            "futures_code": execution.symbol,
             "order_price": price,
             "quantity": quantity,
             "status": status,
-            "trade": self.gateway.serialize(trade),
+            "intent": intent.to_dict(),
+            "execution": execution.to_dict(),
+            "trade": execution.raw_trade,
         }
 
     def _update_order_status(self, api, account) -> None:
