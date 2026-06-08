@@ -52,35 +52,43 @@ class PreTradeCheckService:
         if not data_quality_ok:
             return self._reject(intent, quality.status, checks, quality)
 
-        if intent.side != "buy":
+        if intent.side not in {"buy", "sell"}:
             checks.append({"name": "side_supported", "passed": False, "reason": "unsupported_side"})
             return self._reject(intent, "unsupported_side", checks, quality)
 
         cash = float(available_cash or 0.0)
-        sizing = compute_order_size(available_cash=cash, current_price=float(intent.price), config=self.sizer_config)
-        accepted = bool(sizing.get("accepted"))
-        qty = int(intent.quantity or sizing.get("qty", 0) or 0)
-        estimated_total_cost = float(sizing.get("estimated_total_cost", 0.0) or 0.0)
-        if intent.quantity is not None and qty > 0:
-            order_value = float(qty) * float(intent.price)
-            sizing_for_requested = compute_order_size(
-                available_cash=cash,
-                current_price=float(intent.price),
-                config=AbsoluteSizerConfig(
-                    min_trade_value=0.0,
-                    max_allocation_per_trade=max(order_value, 0.0),
-                    fee_rate=(self.sizer_config or AbsoluteSizerConfig()).fee_rate,
-                    min_fee=(self.sizer_config or AbsoluteSizerConfig()).min_fee,
-                ),
-            )
-            estimated_total_cost = float(sizing_for_requested.get("estimated_total_cost", 0.0) or 0.0)
-            accepted = estimated_total_cost <= cash and estimated_total_cost > 0
+        if intent.side == "sell":
+            qty = int(intent.quantity or 0)
+            estimated_total_cost = 0.0
+            accepted = qty > 0
+            reason = "sell_order_no_cash_required" if accepted else "invalid_quantity"
+        else:
+            sizing = compute_order_size(available_cash=cash, current_price=float(intent.price), config=self.sizer_config)
+            accepted = bool(sizing.get("accepted"))
+            qty = int(intent.quantity or sizing.get("qty", 0) or 0)
+            estimated_total_cost = float(sizing.get("estimated_total_cost", 0.0) or 0.0)
+            reason = str(sizing.get("reason", "capital_guard_rejected"))
+            if intent.quantity is not None and qty > 0:
+                order_value = float(qty) * float(intent.price)
+                sizing_for_requested = compute_order_size(
+                    available_cash=cash,
+                    current_price=float(intent.price),
+                    config=AbsoluteSizerConfig(
+                        min_trade_value=0.0,
+                        max_allocation_per_trade=max(order_value, 0.0),
+                        fee_rate=(self.sizer_config or AbsoluteSizerConfig()).fee_rate,
+                        min_fee=(self.sizer_config or AbsoluteSizerConfig()).min_fee,
+                    ),
+                )
+                estimated_total_cost = float(sizing_for_requested.get("estimated_total_cost", 0.0) or 0.0)
+                accepted = estimated_total_cost <= cash and estimated_total_cost > 0
+                reason = "ok" if accepted else "capital_guard_rejected"
 
         checks.append(
             {
                 "name": "capital_guard_first",
                 "passed": bool(accepted),
-                "reason": "ok" if accepted else str(sizing.get("reason", "capital_guard_rejected")),
+                "reason": "ok" if accepted and intent.side == "buy" else reason,
                 "available_cash": cash,
                 "qty": qty,
                 "estimated_total_cost": estimated_total_cost,
@@ -89,7 +97,7 @@ class PreTradeCheckService:
         if extra_checks:
             checks.extend(extra_checks)
         if not accepted:
-            return self._reject(intent, str(sizing.get("reason", "capital_guard_rejected")), checks, quality)
+            return self._reject(intent, reason, checks, quality)
 
         return PreTradeDecision(
             intent_id=intent.intent_id,

@@ -399,8 +399,8 @@ class ShioajiGateway:
             raise PreTradeCheckError("pre-trade check rejected: daily_order_limit")
         checks.append({"name": "daily_order_limit", "passed": True})
 
-        first_available_cash = self.get_available_cash()
         if normalized_side == "buy":
+            first_available_cash = self.get_available_cash()
             if quantity is not None:
                 approved_qty = int(quantity)
                 order_value = float(approved_qty) * float(current_price)
@@ -414,6 +414,7 @@ class ShioajiGateway:
                 capital_reason = str(check.reason)
                 capital_ok = bool(check.accepted)
         else:
+            first_available_cash = None
             approved_qty = int(quantity or 0)
             estimated_total_cost = 0.0
             capital_reason = "sell_order_no_cash_required"
@@ -422,7 +423,7 @@ class ShioajiGateway:
             {
                 "name": "capital_guard_first",
                 "passed": bool(capital_ok),
-                "available_cash": float(first_available_cash),
+                "available_cash": float(first_available_cash) if first_available_cash is not None else None,
                 "qty": int(approved_qty),
                 "estimated_total_cost": float(estimated_total_cost),
                 "reason": capital_reason,
@@ -430,7 +431,7 @@ class ShioajiGateway:
         )
         if not capital_ok:
             logger.error(
-                "pre-trade rejected before order build: symbol=%s price=%s reason=%s cash=%.2f",
+                "pre-trade rejected before order build: symbol=%s price=%s reason=%s cash=%s",
                 symbol,
                 current_price,
                 capital_reason,
@@ -449,13 +450,13 @@ class ShioajiGateway:
         if not duplicate_ok:
             raise PreTradeCheckError("pre-trade check rejected: duplicate_order")
 
-        second_available_cash = self.get_available_cash()
-        second_capital_ok = normalized_side == "sell" or float(estimated_total_cost) <= float(second_available_cash)
+        second_available_cash = self.get_available_cash() if normalized_side == "buy" else None
+        second_capital_ok = normalized_side == "sell" or float(estimated_total_cost) <= float(second_available_cash or 0.0)
         checks.append(
             {
                 "name": "capital_guard_second",
                 "passed": bool(second_capital_ok),
-                "available_cash": float(second_available_cash),
+                "available_cash": float(second_available_cash) if second_available_cash is not None else None,
                 "estimated_total_cost": float(estimated_total_cost),
             }
         )
@@ -499,8 +500,8 @@ class ShioajiGateway:
             "price": float(current_price),
             "qty": int(approved_qty),
             "estimated_total_cost": float(estimated_total_cost),
-            "available_cash_before": float(first_available_cash),
-            "available_cash_before_order": float(second_available_cash),
+            "available_cash_before": float(first_available_cash) if first_available_cash is not None else None,
+            "available_cash_before_order": float(second_available_cash) if second_available_cash is not None else None,
             "simulation": self.config.simulation,
             "order_lot": "IntradayOdd" if use_odd_lot else "Common",
             "status": status,

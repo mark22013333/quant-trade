@@ -37,6 +37,11 @@ class DummyAPI:
         )
 
 
+class BalanceFailingAPI(DummyAPI):
+    def account_balance(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        raise RuntimeError("balance unavailable")
+
+
 def test_safe_place_stock_order_places_order_after_double_cash_check():
     gateway = ShioajiGateway(ShioajiConfig(simulation=True))
     gateway.api = DummyAPI([5000.0, 5000.0])
@@ -209,6 +214,19 @@ def test_safe_place_stock_order_supports_sell_side_with_requested_quantity():
     assert result["side"] == "sell"
     assert result["qty"] == 3
     assert gateway.api.last_order_kwargs["action"] != "Buy"
+
+
+def test_safe_place_stock_sell_does_not_require_cash_lookup():
+    gateway = ShioajiGateway(ShioajiConfig(simulation=True))
+    gateway.api = BalanceFailingAPI([])
+
+    result = gateway.safe_place_stock_order(symbol="2330", current_price=100.0, side="sell", quantity=3)
+
+    assert result["passed"] is True
+    assert result["side"] == "sell"
+    assert result["available_cash_before"] is None
+    assert result["available_cash_before_order"] is None
+    assert gateway.api.placed is not None
 
 
 def test_execute_intent_rejects_live_insecure_data_quality(monkeypatch):
