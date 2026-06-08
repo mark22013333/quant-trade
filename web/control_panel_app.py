@@ -13,6 +13,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app.broker.shioaji_account_service import ShioajiAccountService
+from app.execution import OrderIntent
+from app.execution.order_preview import OrderPreviewService
+from app.execution.promotion_gate import PromotionGate
 from app.security import redact_sensitive
 from web.services import (
     ShioajiGateway,
@@ -160,6 +164,33 @@ class ShioajiTestRequest(BaseModel):
     interval_sec: float = Field(default=1.1, ge=1.0, le=5.0)
 
 
+class StockOrderPreviewRequest(BaseModel):
+    simulation: bool = True
+    symbol: str = Field(default="2330", min_length=2, max_length=24)
+    side: str = Field(default="buy", pattern="^(buy|sell)$")
+    price: float = Field(gt=0)
+    quantity: int = Field(ge=1, le=1_000_000)
+    available_cash: float | None = Field(default=None, ge=0)
+    position_before: int = Field(default=0, ge=0)
+    strategy_name: str = Field(default="manual", max_length=80)
+    strategy_version: str = Field(default="manual", max_length=80)
+    signal_id: str = Field(default="manual", max_length=120)
+
+
+class PromotionGateRequest(BaseModel):
+    strategy_name: str = Field(default="manual", max_length=80)
+    strategy_version: str = Field(default="manual", max_length=80)
+    paper_days: int = Field(default=0, ge=0)
+    paper_trades: int = Field(default=0, ge=0)
+    max_drawdown: float = Field(default=0.0, ge=0.0, le=1.0)
+    slippage_report: Dict[str, Any] = Field(default_factory=dict)
+    data_quality_blocked: bool = False
+    reconciliation_matched: bool = False
+    single_order_value: float = Field(default=0.0, ge=0.0)
+    daily_order_value: float = Field(default=0.0, ge=0.0)
+    daily_order_count: int = Field(default=0, ge=0)
+
+
 class StrategyBacktestRequest(BaseModel):
     symbol: str = Field(default="2330.TW", min_length=2, max_length=24)
     market: str = Field(default="TW", min_length=2, max_length=8)
@@ -267,6 +298,9 @@ SHIOAJI_LOCK_TIMEOUT_SEC = 16
 
 SHIOAJI_GATEWAY = ShioajiGateway(ENV_PATH)
 SHIOAJI_SERVICE = ShioajiWorkflowService(SHIOAJI_GATEWAY)
+SHIOAJI_ACCOUNT_SERVICE = ShioajiAccountService(env_path=str(ENV_PATH))
+ORDER_PREVIEW_SERVICE = OrderPreviewService()
+PROMOTION_GATE = PromotionGate()
 STRATEGY_SERVICE = StrategyWorkflowService()
 
 
@@ -1131,6 +1165,74 @@ def get_log() -> JSONResponse:
 @app.get("/api/shioaji/env")
 def shioaji_env() -> JSONResponse:
     return JSONResponse({"status": "ok", "data": redact_sensitive(SHIOAJI_GATEWAY.env_status())})
+
+
+@app.get("/api/tw-live/health")
+def tw_live_health(simulation: bool = True) -> JSONResponse:
+    try:
+        result = SHIOAJI_ACCOUNT_SERVICE.run_health_check(simulation=bool(simulation))
+        return JSONResponse({"status": "ok", "data": result.to_dict()})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("tw-live-health", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.get("/api/tw-live/account-snapshot")
+def tw_live_account_snapshot(simulation: bool = True) -> JSONResponse:
+    try:
+        result = SHIOAJI_ACCOUNT_SERVICE.get_account_snapshot(simulation=bool(simulation))
+        return JSONResponse({"status": "ok", "data": result.to_dict()})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("tw-live-account-snapshot", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.post("/api/tw-live/order-preview")
+def tw_live_order_preview(req: StockOrderPreviewRequest) -> JSONResponse:
+    try:
+        intent = OrderIntent(
+            source="web",
+            environment="simulation" if req.simulation else "live",
+            symbol=req.symbol,
+            side=req.side,  # type: ignore[arg-type]
+            price=float(req.price),
+            quantity=int(req.quantity),
+            strategy_name=req.strategy_name,
+            signal_id=req.signal_id,
+            metadata={"strategy_version": req.strategy_version},
+        )
+        estimated_total_cost = float(req.price) * int(req.quantity) if req.side == "buy" else 0.0
+        preview = ORDER_PREVIEW_SERVICE.create_preview(
+            intent=intent,
+            estimated_total_cost=estimated_total_cost,
+            available_cash=req.available_cash,
+            position_before=int(req.position_before),
+            checks=[{"name": "web_preview", "passed": True}],
+            strategy_version=req.strategy_version,
+            signal_id=req.signal_id,
+        )
+        return JSONResponse({"status": "ok", "data": preview.to_dict()})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("tw-live-order-preview", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.post("/api/tw-live/promotion-gate")
+def tw_live_promotion_gate(req: PromotionGateRequest) -> JSONResponse:
+    result = PROMOTION_GATE.evaluate(
+        strategy_name=req.strategy_name,
+        strategy_version=req.strategy_version,
+        paper_days=req.paper_days,
+        paper_trades=req.paper_trades,
+        max_drawdown=req.max_drawdown,
+        slippage_report=req.slippage_report,
+        data_quality_blocked=req.data_quality_blocked,
+        reconciliation_matched=req.reconciliation_matched,
+        single_order_value=req.single_order_value,
+        daily_order_value=req.daily_order_value,
+        daily_order_count=req.daily_order_count,
+    )
+    return JSONResponse({"status": "ok", "data": result.to_dict()})
 
 
 @app.get("/api/finmind/usage")

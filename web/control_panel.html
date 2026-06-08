@@ -302,6 +302,39 @@
       </div>
       <div class="diagnose-tip" id="shioaji-env-tip">讀取 Shioaji 環境中…</div>
 
+      <div class="grid-2" style="margin-top:10px;">
+        <div class="card">
+          <h3>台股實務上線狀態</h3>
+          <p>檢查永豐 API 查詢、模擬下單與正式下單 gate 狀態。</p>
+          <div class="action-row">
+            <button class="action-btn ghost" id="tw-live-health">檢查台股上線狀態</button>
+            <div class="result" id="tw-live-health-result"></div>
+          </div>
+          <div class="action-row">
+            <button class="action-btn ghost" id="tw-live-snapshot">查詢台股帳戶快照</button>
+            <div class="result" id="tw-live-snapshot-result"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>下單 Preview / Gate</h3>
+          <p>正式下單前必須先產生 preview，並通過 paper-to-live gate。</p>
+          <div class="form-grid two">
+            <label>Preview 股票代號<input type="text" id="tw-preview-symbol" value="2330" /></label>
+            <label>Preview 價格<input type="number" id="tw-preview-price" value="100" min="1" step="0.01" /></label>
+            <label>Preview 數量<input type="number" id="tw-preview-qty" value="1" min="1" /></label>
+            <label>可用資金<input type="number" id="tw-preview-cash" value="10000" min="0" /></label>
+          </div>
+          <div class="action-row">
+            <button class="action-btn secondary" id="tw-create-preview">建立下單 Preview</button>
+            <div class="result" id="tw-preview-result"></div>
+          </div>
+          <div class="action-row">
+            <button class="action-btn ghost" id="tw-check-gate">檢查 Paper-to-Live Gate</button>
+            <div class="result" id="tw-gate-result"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="form-grid three" style="margin-top:10px;">
         <label>證券代號
           <input type="text" id="trade-stock-code" value="2890" />
@@ -1946,6 +1979,77 @@
       }
     }
 
+    function renderInlineJson(targetId, payload) {
+      const el = document.getElementById(targetId);
+      if (!el) return;
+      el.textContent = JSON.stringify(payload, null, 2);
+    }
+
+    async function refreshTwLiveHealth() {
+      try {
+        const simulation = document.getElementById('trade-sim').checked;
+        const res = await fetch(`/api/tw-live/health?simulation=${simulation}`);
+        renderInlineJson('tw-live-health-result', await res.json());
+      } catch (err) {
+        renderInlineJson('tw-live-health-result', { status: 'error', error: err?.message || String(err) });
+      }
+    }
+
+    async function refreshTwLiveSnapshot() {
+      try {
+        const simulation = document.getElementById('trade-sim').checked;
+        const res = await fetch(`/api/tw-live/account-snapshot?simulation=${simulation}`);
+        renderInlineJson('tw-live-snapshot-result', await res.json());
+      } catch (err) {
+        renderInlineJson('tw-live-snapshot-result', { status: 'error', error: err?.message || String(err) });
+      }
+    }
+
+    async function createTwOrderPreview() {
+      try {
+        const res = await fetch('/api/tw-live/order-preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            simulation: document.getElementById('trade-sim').checked,
+            symbol: document.getElementById('tw-preview-symbol').value,
+            side: 'buy',
+            price: toNumber(document.getElementById('tw-preview-price').value, 100),
+            quantity: toNumber(document.getElementById('tw-preview-qty').value, 1),
+            available_cash: toNumber(document.getElementById('tw-preview-cash').value, 10000),
+            position_before: 0,
+            strategy_name: 'manual',
+            strategy_version: 'manual',
+            signal_id: 'manual'
+          })
+        });
+        renderInlineJson('tw-preview-result', await res.json());
+      } catch (err) {
+        renderInlineJson('tw-preview-result', { status: 'error', error: err?.message || String(err) });
+      }
+    }
+
+    async function checkTwPromotionGate() {
+      try {
+        const res = await fetch('/api/tw-live/promotion-gate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            strategy_name: 'manual',
+            strategy_version: 'manual',
+            paper_days: 0,
+            paper_trades: 0,
+            max_drawdown: 0,
+            slippage_report: {},
+            reconciliation_matched: false
+          })
+        });
+        renderInlineJson('tw-gate-result', await res.json());
+      } catch (err) {
+        renderInlineJson('tw-gate-result', { status: 'error', error: err?.message || String(err) });
+      }
+    }
+
     function setFinMindUsageState(text, level = 'neutral') {
       const stateEl = document.getElementById('finmind-usage-state');
       if (!stateEl) return;
@@ -2140,6 +2244,10 @@
     document.getElementById('refresh-log').addEventListener('click', refreshServerLog);
     document.getElementById('refresh-shioaji-env').addEventListener('click', refreshShioajiEnv);
     document.getElementById('trade-sim').addEventListener('change', refreshShioajiEnv);
+    document.getElementById('tw-live-health').addEventListener('click', refreshTwLiveHealth);
+    document.getElementById('tw-live-snapshot').addEventListener('click', refreshTwLiveSnapshot);
+    document.getElementById('tw-create-preview').addEventListener('click', createTwOrderPreview);
+    document.getElementById('tw-check-gate').addEventListener('click', checkTwPromotionGate);
     document.getElementById('refresh-finmind-usage').addEventListener('click', refreshFinMindUsage);
     document.getElementById('refresh-data-health').addEventListener('click', refreshDataHealth);
     document.getElementById('refresh-pipeline-runs').addEventListener('click', () => refreshPipelineRuns(20));

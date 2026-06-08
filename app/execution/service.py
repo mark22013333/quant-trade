@@ -10,9 +10,15 @@ from app.security import redact_sensitive
 
 
 class TradingExecutionService:
-    def __init__(self, gateway: ShioajiGateway | None = None, repository: Any | None = None):
+    def __init__(
+        self,
+        gateway: ShioajiGateway | None = None,
+        repository: Any | None = None,
+        preview_service: Any | None = None,
+    ):
         self.gateway = gateway
         self.repository = repository
+        self.preview_service = preview_service
         self.records: list[dict[str, Any]] = []
 
     def execute_intent(
@@ -22,6 +28,10 @@ class TradingExecutionService:
         data_quality: DataQualityStatus | None = None,
         require_chip: bool = False,
     ) -> ExecutionResult:
+        gate_rejection = self._validate_live_gate(intent)
+        if gate_rejection is not None:
+            return gate_rejection
+
         if self.gateway is None:
             pretrade = PreTradeDecision(
                 intent_id=intent.intent_id,
@@ -83,6 +93,42 @@ class TradingExecutionService:
                 data_quality_status="unknown",
             )
             return self._record_result(intent, pretrade, executed=False, status="error", raw_trade={"error": str(exc)})
+
+    def _validate_live_gate(self, intent: OrderIntent) -> ExecutionResult | None:
+        if intent.environment != "live":
+            return None
+        metadata = dict(intent.metadata or {})
+        preview_id = str(metadata.get("preview_id") or "")
+        strategy_version = str(metadata.get("strategy_version") or "")
+        manual_confirmed = bool(metadata.get("manual_confirmed", False))
+        promotion_gate_accepted = bool(metadata.get("promotion_gate_accepted", False))
+        if not preview_id:
+            return self._live_rejected(intent, "preview_required")
+        if not strategy_version or not intent.strategy_name or not intent.signal_id:
+            return self._live_rejected(intent, "live_metadata_required")
+        if not promotion_gate_accepted:
+            return self._live_rejected(intent, "promotion_gate_required")
+        if self.preview_service is not None and hasattr(self.preview_service, "approve"):
+            decision = self.preview_service.approve(
+                preview_id=preview_id,
+                intent=intent,
+                manual_confirmed=manual_confirmed,
+            )
+            if not bool(decision.accepted):
+                return self._live_rejected(intent, str(decision.reason))
+        elif not manual_confirmed:
+            return self._live_rejected(intent, "manual_confirmation_required")
+        return None
+
+    def _live_rejected(self, intent: OrderIntent, reason: str) -> ExecutionResult:
+        pretrade = PreTradeDecision(
+            intent_id=intent.intent_id,
+            accepted=False,
+            reason=str(reason),
+            checks=[{"name": "live_preview_gate", "passed": False, "reason": str(reason)}],
+            data_quality_status="unknown",
+        )
+        return self._record_result(intent, pretrade, executed=False, status="rejected", raw_trade=None)
 
     def _persist_completed_result(self, intent: OrderIntent, result: ExecutionResult) -> None:
         record = {"intent": intent.to_dict(), "result": result.to_dict()}

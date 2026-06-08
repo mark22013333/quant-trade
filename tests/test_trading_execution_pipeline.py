@@ -101,3 +101,23 @@ def test_trading_execution_service_rejects_missing_gateway():
     assert result.accepted is False
     assert result.executed is False
     assert result.pretrade.reason == "execution_gateway_missing"
+
+
+def test_trading_execution_service_rejects_live_without_preview_gate():
+    intent = OrderIntent(
+        source="web",
+        environment="live",
+        symbol="2330",
+        side="buy",
+        price=100,
+        quantity=1,
+        strategy_name="manual",
+        signal_id="S1",
+        metadata={"strategy_version": "v1"},
+    )
+
+    result = TradingExecutionService().execute_intent(intent)
+
+    assert result.accepted is False
+    assert result.executed is False
+    assert result.pretrade.reason == "preview_required"

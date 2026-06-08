@@ -189,6 +189,45 @@ def test_safe_place_stock_order_rejects_price_out_of_band():
     assert gateway.api.placed is None
 
 
+def test_safe_place_stock_order_rejects_price_deviation_guard():
+    gateway = ShioajiGateway(ShioajiConfig(simulation=True))
+    gateway.api = DummyAPI([5000.0, 5000.0])
+
+    with pytest.raises(PreTradeCheckError, match="price_deviation_guard"):
+        gateway.safe_place_stock_order(symbol="2330", current_price=105.0, reference_price=100.0, quantity=1)
+
+    assert gateway.api.placed is None
+
+
+def test_safe_place_stock_order_rejects_sell_more_than_position():
+    gateway = ShioajiGateway(ShioajiConfig(simulation=True))
+    gateway.api = DummyAPI([5000.0, 5000.0])
+
+    with pytest.raises(PreTradeCheckError, match="position_quantity_for_sell"):
+        gateway.safe_place_stock_order(symbol="2330", current_price=100.0, side="sell", quantity=3, position_quantity=2)
+
+    assert gateway.api.placed is None
+
+
+def test_safe_place_stock_order_rejects_live_disposition_and_low_liquidity(monkeypatch):
+    monkeypatch.setenv("SHIOAJI_ENABLE_LIVE_ORDERS", "1")
+    gateway = ShioajiGateway(ShioajiConfig(simulation=False, allow_live_order=True))
+    gateway.api = DummyAPI([5000.0, 5000.0])
+
+    with pytest.raises(PreTradeCheckError, match="disposition_attention_guard"):
+        gateway.safe_place_stock_order(
+            symbol="2330",
+            current_price=100.0,
+            quantity=1,
+            is_disposition_or_attention=True,
+        )
+
+    gateway = ShioajiGateway(ShioajiConfig(simulation=False, allow_live_order=True))
+    gateway.api = DummyAPI([5000.0, 5000.0])
+    with pytest.raises(PreTradeCheckError, match="liquidity_guard"):
+        gateway.safe_place_stock_order(symbol="2330", current_price=100.0, quantity=1, avg_volume_20=100.0)
+
+
 def test_execute_intent_returns_execution_result():
     gateway = ShioajiGateway(ShioajiConfig(simulation=True))
     gateway.api = DummyAPI([5000.0, 5000.0])

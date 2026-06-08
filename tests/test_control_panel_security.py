@@ -88,3 +88,32 @@ def test_control_panel_echo_disabled_by_default(monkeypatch):
 
     assert response.status_code == 404
     assert response.json()["error"] == "debug endpoint disabled"
+
+
+def test_tw_live_api_is_token_protected(monkeypatch):
+    monkeypatch.setenv("CONTROL_PANEL_TOKEN", "secret-token")
+    monkeypatch.setenv("CONTROL_PANEL_BIND_HOST", "127.0.0.1")
+    client = TestClient(app)
+
+    blocked = client.get("/api/tw-live/health?simulation=true")
+    allowed = client.get("/api/tw-live/health?simulation=true", headers={"Authorization": "Bearer secret-token"})
+
+    assert blocked.status_code == 401
+    assert allowed.status_code == 200
+    assert allowed.json()["status"] == "ok"
+
+
+def test_tw_live_order_preview_endpoint(monkeypatch):
+    monkeypatch.delenv("CONTROL_PANEL_TOKEN", raising=False)
+    monkeypatch.setenv("CONTROL_PANEL_BIND_HOST", "127.0.0.1")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/tw-live/order-preview",
+        json={"symbol": "2330", "side": "buy", "price": 100, "quantity": 1},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["symbol"] == "2330"
+    assert data["preview_id"]

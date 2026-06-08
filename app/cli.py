@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from datetime import datetime, time, timedelta
 from pathlib import Path
 
@@ -335,6 +336,77 @@ def cmd_live_buy(args) -> None:
     print(payload)
 
 
+def cmd_shioaji_doctor(args) -> None:
+    from app.broker.shioaji_account_service import ShioajiAccountService
+
+    service = ShioajiAccountService()
+    result = service.run_health_check(simulation=bool(args.simulation))
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+
+
+def cmd_account_snapshot(args) -> None:
+    from app.broker.shioaji_account_service import ShioajiAccountService
+
+    service = ShioajiAccountService()
+    result = service.get_account_snapshot(simulation=bool(args.simulation))
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+
+
+def cmd_order_preview(args) -> None:
+    from app.backtest.costs import estimate_buy_total_cost
+    from app.execution import OrderIntent
+    from app.execution.order_preview import OrderPreviewService
+
+    intent = OrderIntent(
+        source="cli",
+        environment="simulation",
+        symbol=args.symbol,
+        side=args.side,
+        price=float(args.price),
+        quantity=int(args.quantity),
+        order_lot="Common" if bool(args.common_lot) else "IntradayOdd",
+        strategy_name=args.strategy_name,
+        signal_id=args.signal_id,
+        metadata={"strategy_version": args.strategy_version},
+    )
+    estimated_total_cost = estimate_buy_total_cost(float(args.price) * int(args.quantity)) if args.side == "buy" else 0.0
+    preview = OrderPreviewService(ttl_seconds=int(args.ttl_seconds)).create_preview(
+        intent=intent,
+        estimated_total_cost=estimated_total_cost,
+        available_cash=float(args.available_cash),
+        position_before=int(args.position_before),
+        checks=[{"name": "cli_preview", "passed": True}],
+        strategy_version=args.strategy_version,
+        signal_id=args.signal_id,
+    )
+    print(json.dumps(preview.to_dict(), ensure_ascii=False, indent=2))
+
+
+def cmd_reconcile(args) -> None:
+    from app.portfolio.reconciliation import ReconciliationService
+
+    expected_positions = _parse_position_map(args.expected_positions)
+    actual_positions = _parse_position_map(args.actual_positions)
+    result = ReconciliationService().reconcile(
+        expected_cash=float(args.expected_cash),
+        actual_cash=float(args.actual_cash),
+        expected_positions=expected_positions,
+        actual_positions=actual_positions,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+
+
+def _parse_position_map(text: str | None) -> dict[str, int]:
+    output: dict[str, int] = {}
+    for item in str(text or "").split(","):
+        if not item.strip():
+            continue
+        symbol, _, qty = item.partition(":")
+        if symbol.strip():
+            output[symbol.strip().upper()] = int(qty or 0)
+    return output
+
+
 def cmd_paper_ledger(args) -> None:
     TradingRepository, get_session_factory, init_db = _load_db_modules()
     from app.paper.ledger import PaperLedgerConfig, export_paper_ledger_report, run_symbol_paper_ledger
@@ -507,6 +579,37 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--live-order-nonce", default="", help="nonce required when SHIOAJI_LIVE_ORDER_NONCE is configured")
     p.add_argument("--common-lot", action="store_true", help="use common-lot order instead of intraday odd-lot")
     p.set_defaults(func=cmd_live_buy)
+
+    p = sub.add_parser("shioaji-doctor", help="Run Shioaji API readiness checks")
+    p.add_argument("--simulation", action="store_true", default=True)
+    p.add_argument("--live", dest="simulation", action="store_false")
+    p.set_defaults(func=cmd_shioaji_doctor)
+
+    p = sub.add_parser("account-snapshot", help="Query Shioaji account snapshot")
+    p.add_argument("--simulation", action="store_true", default=True)
+    p.add_argument("--live", dest="simulation", action="store_false")
+    p.set_defaults(func=cmd_account_snapshot)
+
+    p = sub.add_parser("order-preview", help="Create a guarded stock order preview")
+    p.add_argument("--symbol", required=True)
+    p.add_argument("--side", choices=["buy", "sell"], default="buy")
+    p.add_argument("--price", type=float, required=True)
+    p.add_argument("--quantity", type=int, required=True)
+    p.add_argument("--available-cash", type=float, default=10_000)
+    p.add_argument("--position-before", type=int, default=0)
+    p.add_argument("--strategy-name", default="manual")
+    p.add_argument("--strategy-version", default="manual")
+    p.add_argument("--signal-id", default="manual")
+    p.add_argument("--ttl-seconds", type=int, default=120)
+    p.add_argument("--common-lot", action="store_true")
+    p.set_defaults(func=cmd_order_preview)
+
+    p = sub.add_parser("reconcile", help="Compare expected and actual cash/positions")
+    p.add_argument("--expected-cash", type=float, required=True)
+    p.add_argument("--actual-cash", type=float, required=True)
+    p.add_argument("--expected-positions", default="", help="e.g. 2330:3,2317:1")
+    p.add_argument("--actual-positions", default="", help="e.g. 2330:3,2317:1")
+    p.set_defaults(func=cmd_reconcile)
 
     p = sub.add_parser("paper-ledger", help="Simulate T+2 paper ledger and export HTML/CSV/JSON")
     p.add_argument("--symbol", required=True, help="e.g. 2330")

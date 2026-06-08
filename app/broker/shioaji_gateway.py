@@ -136,6 +136,19 @@ class ShioajiGateway:
             return False
         return True
 
+    @classmethod
+    def _tick_distance(cls, left: float, right: float) -> int:
+        low = min(float(left), float(right))
+        high = max(float(left), float(right))
+        if high <= low:
+            return 0
+        distance = 0
+        cursor = low
+        while cursor < high and distance <= 10_000:
+            cursor += cls._tw_tick_size(cursor)
+            distance += 1
+        return distance
+
     def _is_duplicate_order(self, symbol: str, qty: int, price: float) -> bool:
         now_dt = datetime.now()
         key = (self._normalize_symbol(symbol), str(int(qty)), int(round(float(price) * 100)))
@@ -351,6 +364,19 @@ class ShioajiGateway:
         enforce_session_check: bool | None = None,
         data_quality: DataQualityStatus | None = None,
         require_chip: bool = False,
+        position_quantity: int | None = None,
+        reference_price: float | None = None,
+        pending_settlement_amount: float = 0.0,
+        is_disposition_or_attention: bool = False,
+        avg_volume_20: float | None = None,
+        portfolio_equity: float | None = None,
+        current_position_value: float = 0.0,
+        daily_pnl: float = 0.0,
+        max_price_deviation_ticks: int = 3,
+        max_price_deviation_pct: float = 0.01,
+        min_avg_volume_20: float = 500_000.0,
+        max_single_position_pct: float = 0.10,
+        max_daily_loss_pct: float = 0.02,
     ) -> dict[str, Any]:
         """
         Absolute capital guard (strict):
@@ -394,6 +420,26 @@ class ShioajiGateway:
         if not tick_ok:
             raise PreTradeCheckError("pre-trade check rejected: invalid_tick_size")
 
+        if reference_price is not None and float(reference_price) > 0:
+            tick_distance = self._tick_distance(float(current_price), float(reference_price))
+            pct_distance = abs(float(current_price) - float(reference_price)) / float(reference_price)
+            deviation_ok = tick_distance <= int(max_price_deviation_ticks) and pct_distance <= float(max_price_deviation_pct)
+        else:
+            tick_distance = 0
+            pct_distance = 0.0
+            deviation_ok = True
+        checks.append(
+            {
+                "name": "price_deviation_guard",
+                "passed": bool(deviation_ok),
+                "reference_price": float(reference_price) if reference_price is not None else None,
+                "tick_distance": int(tick_distance),
+                "pct_distance": float(pct_distance),
+            }
+        )
+        if not deviation_ok:
+            raise PreTradeCheckError("pre-trade check rejected: price_deviation_guard")
+
         if not self._check_daily_order_limit():
             checks.append({"name": "daily_order_limit", "passed": False})
             raise PreTradeCheckError("pre-trade check rejected: daily_order_limit")
@@ -401,20 +447,22 @@ class ShioajiGateway:
 
         if normalized_side == "buy":
             first_available_cash = self.get_available_cash()
+            settlement_adjusted_cash = float(first_available_cash) - max(0.0, float(pending_settlement_amount or 0.0))
             if quantity is not None:
                 approved_qty = int(quantity)
                 order_value = float(approved_qty) * float(current_price)
                 estimated_total_cost = estimate_buy_total_cost(order_value)
-                capital_reason = "ok" if approved_qty > 0 and estimated_total_cost <= first_available_cash else "capital_guard_rejected"
-                capital_ok = approved_qty > 0 and estimated_total_cost <= first_available_cash
+                capital_reason = "ok" if approved_qty > 0 and estimated_total_cost <= settlement_adjusted_cash else "capital_guard_rejected"
+                capital_ok = approved_qty > 0 and estimated_total_cost <= settlement_adjusted_cash
             else:
-                check = enforce_absolute_capital_guard(available_cash=first_available_cash, current_price=float(current_price))
+                check = enforce_absolute_capital_guard(available_cash=settlement_adjusted_cash, current_price=float(current_price))
                 approved_qty = int(check.qty)
                 estimated_total_cost = float(check.estimated_total_cost)
                 capital_reason = str(check.reason)
                 capital_ok = bool(check.accepted)
         else:
             first_available_cash = None
+            settlement_adjusted_cash = None
             approved_qty = int(quantity or 0)
             estimated_total_cost = 0.0
             capital_reason = "sell_order_no_cash_required"
@@ -424,6 +472,7 @@ class ShioajiGateway:
                 "name": "capital_guard_first",
                 "passed": bool(capital_ok),
                 "available_cash": float(first_available_cash) if first_available_cash is not None else None,
+                "settlement_adjusted_cash": float(settlement_adjusted_cash) if settlement_adjusted_cash is not None else None,
                 "qty": int(approved_qty),
                 "estimated_total_cost": float(estimated_total_cost),
                 "reason": capital_reason,
@@ -445,18 +494,53 @@ class ShioajiGateway:
         if not band_ok:
             raise PreTradeCheckError("pre-trade check rejected: price_out_of_band")
 
+        limit_up = getattr(contract, "limit_up", None)
+        limit_down = getattr(contract, "limit_down", None)
+        limit_fillable = True
+        limit_reason = "ok"
+        if normalized_side == "buy" and isinstance(limit_up, (int, float)) and float(current_price) >= float(limit_up):
+            limit_fillable = False
+            limit_reason = "limit_up_buy_blocked"
+        if normalized_side == "sell" and isinstance(limit_down, (int, float)) and float(current_price) <= float(limit_down):
+            limit_fillable = False
+            limit_reason = "limit_down_sell_blocked"
+        checks.append({"name": "limit_up_down_fillability", "passed": bool(limit_fillable), "reason": limit_reason})
+        if not limit_fillable:
+            raise PreTradeCheckError(f"pre-trade check rejected: {limit_reason}")
+
         duplicate_ok = not self._is_duplicate_order(symbol=symbol, qty=int(approved_qty), price=float(current_price))
         checks.append({"name": "duplicate_order", "passed": bool(duplicate_ok)})
         if not duplicate_ok:
             raise PreTradeCheckError("pre-trade check rejected: duplicate_order")
 
+        if normalized_side == "sell":
+            position_ok = position_quantity is None or int(position_quantity) >= int(approved_qty)
+        else:
+            position_ok = True
+        checks.append(
+            {
+                "name": "position_quantity_for_sell",
+                "passed": bool(position_ok),
+                "position_quantity": int(position_quantity) if position_quantity is not None else None,
+                "requested_quantity": int(approved_qty),
+            }
+        )
+        if not position_ok:
+            raise PreTradeCheckError("pre-trade check rejected: position_quantity_for_sell")
+
         second_available_cash = self.get_available_cash() if normalized_side == "buy" else None
-        second_capital_ok = normalized_side == "sell" or float(estimated_total_cost) <= float(second_available_cash or 0.0)
+        second_adjusted_cash = (
+            float(second_available_cash) - max(0.0, float(pending_settlement_amount or 0.0))
+            if second_available_cash is not None
+            else None
+        )
+        second_capital_ok = normalized_side == "sell" or float(estimated_total_cost) <= float(second_adjusted_cash or 0.0)
         checks.append(
             {
                 "name": "capital_guard_second",
                 "passed": bool(second_capital_ok),
                 "available_cash": float(second_available_cash) if second_available_cash is not None else None,
+                "settlement_adjusted_cash": float(second_adjusted_cash) if second_adjusted_cash is not None else None,
                 "estimated_total_cost": float(estimated_total_cost),
             }
         )
@@ -469,12 +553,65 @@ class ShioajiGateway:
             )
             raise PreTradeCheckError("estimated total cost exceeds live available cash")
 
+        disposition_ok = self.config.simulation or not bool(is_disposition_or_attention)
+        checks.append({"name": "disposition_attention_guard", "passed": bool(disposition_ok)})
+        if not disposition_ok:
+            raise PreTradeCheckError("pre-trade check rejected: disposition_attention_guard")
+
+        liquidity_ok = self.config.simulation or avg_volume_20 is None or float(avg_volume_20) >= float(min_avg_volume_20)
+        checks.append(
+            {
+                "name": "liquidity_guard",
+                "passed": bool(liquidity_ok),
+                "avg_volume_20": float(avg_volume_20) if avg_volume_20 is not None else None,
+                "min_avg_volume_20": float(min_avg_volume_20),
+            }
+        )
+        if not liquidity_ok:
+            raise PreTradeCheckError("pre-trade check rejected: liquidity_guard")
+
+        if portfolio_equity is not None and float(portfolio_equity) > 0:
+            projected_position_value = max(0.0, float(current_position_value or 0.0))
+            if normalized_side == "buy":
+                projected_position_value += float(approved_qty) * float(current_price)
+            else:
+                projected_position_value = max(0.0, projected_position_value - float(approved_qty) * float(current_price))
+            single_position_ok = projected_position_value <= float(portfolio_equity) * float(max_single_position_pct)
+        else:
+            projected_position_value = None
+            single_position_ok = True
+        checks.append(
+            {
+                "name": "single_position_limit",
+                "passed": bool(single_position_ok),
+                "projected_position_value": projected_position_value,
+                "portfolio_equity": float(portfolio_equity) if portfolio_equity is not None else None,
+            }
+        )
+        if not single_position_ok:
+            raise PreTradeCheckError("pre-trade check rejected: single_position_limit")
+
+        if portfolio_equity is not None and float(portfolio_equity) > 0:
+            daily_loss_ok = float(daily_pnl) >= -(float(portfolio_equity) * float(max_daily_loss_pct))
+        else:
+            daily_loss_ok = True
+        checks.append(
+            {
+                "name": "daily_loss_limit",
+                "passed": bool(daily_loss_ok),
+                "daily_pnl": float(daily_pnl),
+                "portfolio_equity": float(portfolio_equity) if portfolio_equity is not None else None,
+            }
+        )
+        if not daily_loss_ok:
+            raise PreTradeCheckError("pre-trade check rejected: daily_loss_limit")
+
         checks.extend(
             [
-                {"name": "position_limit", "passed": True, "reason": "not_enforced"},
+                {"name": "position_limit", "passed": bool(position_ok), "reason": "checked"},
                 {"name": "max_portfolio_exposure", "passed": True, "reason": "not_enforced"},
-                {"name": "disposition_stock_block", "passed": True, "reason": "not_enforced"},
-                {"name": "liquidity_threshold", "passed": True, "reason": "not_enforced"},
+                {"name": "disposition_stock_block", "passed": bool(disposition_ok), "reason": "checked"},
+                {"name": "liquidity_threshold", "passed": bool(liquidity_ok), "reason": "checked"},
             ]
         )
 
@@ -502,6 +639,7 @@ class ShioajiGateway:
             "estimated_total_cost": float(estimated_total_cost),
             "available_cash_before": float(first_available_cash) if first_available_cash is not None else None,
             "available_cash_before_order": float(second_available_cash) if second_available_cash is not None else None,
+            "settlement_adjusted_cash": float(second_adjusted_cash) if second_adjusted_cash is not None else None,
             "simulation": self.config.simulation,
             "order_lot": "IntradayOdd" if use_odd_lot else "Common",
             "status": status,
@@ -627,6 +765,7 @@ class ShioajiGateway:
         require_chip: bool = False,
     ) -> ExecutionResult:
         try:
+            metadata = dict(intent.metadata or {})
             if str(intent.metadata.get("instrument_type") or "").lower() == "futures":
                 payload = self.safe_place_futures_order(
                     symbol=intent.symbol,
@@ -645,6 +784,14 @@ class ShioajiGateway:
                     use_odd_lot=(intent.order_lot == "IntradayOdd"),
                     data_quality=data_quality,
                     require_chip=require_chip,
+                    position_quantity=self._optional_int(metadata.get("position_quantity")),
+                    reference_price=self._optional_float(metadata.get("reference_price")),
+                    pending_settlement_amount=float(metadata.get("pending_settlement_amount") or 0.0),
+                    is_disposition_or_attention=bool(metadata.get("is_disposition_or_attention", False)),
+                    avg_volume_20=self._optional_float(metadata.get("avg_volume_20")),
+                    portfolio_equity=self._optional_float(metadata.get("portfolio_equity")),
+                    current_position_value=float(metadata.get("current_position_value") or 0.0),
+                    daily_pnl=float(metadata.get("daily_pnl") or 0.0),
                 )
             pretrade = PreTradeDecision(
                 intent_id=intent.intent_id,
@@ -692,6 +839,18 @@ class ShioajiGateway:
                 raw_trade=None,
                 pretrade=pretrade,
             )
+
+    @staticmethod
+    def _optional_float(value: Any) -> float | None:
+        if value is None or value == "":
+            return None
+        return float(value)
+
+    @staticmethod
+    def _optional_int(value: Any) -> int | None:
+        if value is None or value == "":
+            return None
+        return int(value)
 
     def execute_stock_order_in_thread(
         self,
