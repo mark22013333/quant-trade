@@ -96,6 +96,8 @@ class OrderPreviewService:
         repo = repository or self.repository
         preview = self._previews.get(str(preview_id or ""))
         if preview is None:
+            preview = self._load_preview_from_repository(str(preview_id or ""), repository=repo)
+        if preview is None:
             return self._record_decision(
                 PreviewDecision(preview_id=str(preview_id or ""), accepted=False, reason="preview_not_found"),
                 repository=repo,
@@ -111,23 +113,23 @@ class OrderPreviewService:
                 PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="manual_confirmation_required"),
                 repository=repo,
             )
+        for key, expected in (
+            ("symbol", preview.symbol),
+            ("side", preview.side),
+            ("price", preview.price),
+            ("quantity", preview.quantity),
+        ):
+            actual = getattr(intent, key)
+            if key == "price":
+                same = abs(float(actual) - float(expected)) < 1e-8
+            else:
+                same = actual == expected
+            if not same:
+                return self._record_decision(
+                    PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="preview_intent_mismatch"),
+                    repository=repo,
+                )
         if intent.environment == "live":
-            for key, expected in (
-                ("symbol", preview.symbol),
-                ("side", preview.side),
-                ("price", preview.price),
-                ("quantity", preview.quantity),
-            ):
-                actual = getattr(intent, key)
-                if key == "price":
-                    same = abs(float(actual) - float(expected)) < 1e-8
-                else:
-                    same = actual == expected
-                if not same:
-                    return self._record_decision(
-                        PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="preview_intent_mismatch"),
-                        repository=repo,
-                    )
             if not intent.strategy_name or not intent.signal_id or not intent.metadata.get("strategy_version"):
                 return self._record_decision(
                     PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="live_metadata_required"),
@@ -140,6 +142,49 @@ class OrderPreviewService:
 
     def get(self, preview_id: str) -> OrderPreview | None:
         return self._previews.get(str(preview_id or ""))
+
+    def _load_preview_from_repository(self, preview_id: str, *, repository: Any | None = None) -> OrderPreview | None:
+        repo = repository or self.repository
+        if repo is None or not hasattr(repo, "get_order_preview_record"):
+            return None
+        record = repo.get_order_preview_record(preview_id)
+        if not isinstance(record, dict):
+            return None
+        try:
+            expires_raw = record.get("expires_at")
+            created_raw = record.get("created_at")
+            preview = OrderPreview(
+                preview_id=str(record["preview_id"]),
+                strategy_name=str(record.get("strategy_name") or "manual"),
+                strategy_version=str(record.get("strategy_version") or "manual"),
+                signal_id=str(record.get("signal_id") or ""),
+                symbol=str(record["symbol"]),
+                side=str(record["side"]),
+                price=float(record["price"]),
+                quantity=int(record["quantity"]),
+                estimated_total_cost=float(record.get("estimated_total_cost") or 0.0),
+                available_cash=(
+                    float(record["available_cash"])
+                    if record.get("available_cash") is not None
+                    else None
+                ),
+                position_before=int(record.get("position_before") or 0),
+                checks=list((record.get("preview") or {}).get("checks") or []),
+                expires_at=(
+                    datetime.fromisoformat(str(expires_raw))
+                    if expires_raw
+                    else datetime.utcnow() + timedelta(seconds=self.ttl_seconds)
+                ),
+                created_at=(
+                    datetime.fromisoformat(str(created_raw))
+                    if created_raw
+                    else datetime.utcnow()
+                ),
+            )
+            self._previews[preview.preview_id] = preview
+            return preview
+        except Exception:
+            return None
 
     def _record_decision(self, decision: PreviewDecision, *, repository: Any | None = None) -> PreviewDecision:
         repo = repository or self.repository

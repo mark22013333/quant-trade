@@ -124,6 +124,8 @@ class DailyRadarService:
             include_institutional=True,
             include_broker_agg=True,
             include_disposition=True,
+            include_fundamentals=True,
+            include_news=True,
         )
         if bool(sync_result.get("partial_failure")):
             degrade_reasons.append("sync_partial_failure")
@@ -236,6 +238,11 @@ class DailyRadarService:
             "candidate_type",
             "last_bar_date",
             "data_quality",
+            "fundamental_data_quality",
+            "revenue_score",
+            "quality_score",
+            "valuation_or_growth_score",
+            "news_risk_score",
             "reason_tags",
             "blocker_tags",
         ]
@@ -252,6 +259,11 @@ class DailyRadarService:
                 row.get("candidate_type", ""),
                 row.get("last_bar_date", ""),
                 row.get("data_quality", ""),
+                row.get("fundamental_data_quality", ""),
+                f"{float(row.get('revenue_score', 0.5) or 0.5):.4f}",
+                f"{float(row.get('quality_score', 0.5) or 0.5):.4f}",
+                f"{float(row.get('valuation_or_growth_score', 0.5) or 0.5):.4f}",
+                f"{float(row.get('news_risk_score', 0.5) or 0.5):.4f}",
                 csv_join_pipe(row.get("reason_tags", [])),
                 csv_join_pipe(row.get("blocker_tags", [])),
             ]

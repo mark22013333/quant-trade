@@ -24,6 +24,7 @@ class CandidateItem:
     risk_flags: list[str] = field(default_factory=list)
     last_bar_date: str | None = None
     data_quality: str = "unknown"
+    fundamental_data_quality: str = "missing"
 
 
 def build_candidates(
@@ -73,6 +74,10 @@ def build_candidates(
             f"major_ratio={scored.major_ratio:.2f}",
             f"retail_ratio={scored.retail_ratio:.2f}",
             f"concentration_proxy={scored.concentration_proxy:.2f}",
+            f"fundamental_quality={scored.fundamental_data_quality}",
+            f"revenue_score={scored.revenue_score:.2f}",
+            f"quality_score={scored.quality_score:.2f}",
+            f"news_risk_score={scored.news_risk_score:.2f}",
         ]
         risk_flags: list[str] = []
         if scored.data_quality != "fresh":
@@ -111,6 +116,7 @@ def build_candidates(
                 risk_flags=risk_flags,
                 last_bar_date=scored.last_bar_date,
                 data_quality=scored.data_quality,
+                fundamental_data_quality=scored.fundamental_data_quality,
             )
         )
     rows.sort(key=lambda item: (item.score, item.risk_score), reverse=True)
@@ -147,6 +153,7 @@ def build_candidate_payload(items: list[CandidateItem]) -> list[dict]:
                 "risk_flags": list(item.risk_flags),
                 "last_bar_date": item.last_bar_date,
                 "data_quality": item.data_quality,
+                "fundamental_data_quality": item.fundamental_data_quality,
             }
         )
     return payload

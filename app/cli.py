@@ -174,6 +174,8 @@ def cmd_sync_market_bundle(args) -> None:
             include_institutional=bool(args.include_chip),
             include_broker_agg=bool(args.include_broker_agg),
             include_disposition=bool(args.include_disposition),
+            include_fundamentals=bool(args.include_fundamentals),
+            include_news=bool(args.include_news),
         )
         session.commit()
     print(result)
@@ -562,6 +564,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-include-broker-agg", dest="include_broker_agg", action="store_false")
     p.add_argument("--include-disposition", dest="include_disposition", action="store_true", default=True)
     p.add_argument("--no-include-disposition", dest="include_disposition", action="store_false")
+    p.add_argument("--include-fundamentals", dest="include_fundamentals", action="store_true", default=False)
+    p.add_argument("--no-include-fundamentals", dest="include_fundamentals", action="store_false")
+    p.add_argument("--include-news", dest="include_news", action="store_true", default=False)
+    p.add_argument("--no-include-news", dest="include_news", action="store_false")
     p.set_defaults(func=cmd_sync_market_bundle)
 
     p = sub.add_parser("list-0050", help="List latest 0050 symbols in DB")

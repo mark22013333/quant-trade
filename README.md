@@ -136,6 +136,7 @@ python run_web.py --reload
 - 短期投資 Dashboard：Top N / 流動性預篩數量 / 回溯天數
 - 波段報表：開始日 / 結束日 / 回溯天數
 - AI 協作中心：是否強制同步文件
+- AI 提案工作台：TradingAdvisor 提案、下單 Preview、人工確認、婉拒與 Advisor 回測
 - Shioaji 測試中心：登入測試 / 證券下單測試 / 期貨下單測試 / 一鍵模擬整套測試
 - 正式環境切換檢核：檢查 `production permission`、帳戶 `signed` 狀態、CA 設定
 
@@ -148,6 +149,7 @@ python run_web.py --reload
 python run_web.py
 python run_web.py --reload
 python run_web.py --host 0.0.0.0 --port 8080
+.venv/bin/python run_web.py --host 127.0.0.1 --port 8766
 ```
 
 若帳戶查詢無回應，請避免同時點多個帳戶查詢（帳務 API 需要序列化），可先看 `reports/control_panel.log` 追蹤進度。
@@ -176,6 +178,47 @@ python run_web.py --host 0.0.0.0 --port 8080
 - `export.files`: 匯出的檔名（summary JSON / trades CSV / signals CSV / equity CSV）
 - `export.urls`: 可直接開啟下載的 `/reports/...` 路徑
 
+### 7-3) TradingAdvisor 決策輔助工作流
+
+本專案第一版的 TradingAdvisor 是「AI 決策輔助 + 人類確認送單」，不是自動化交易。預設使用 `stub` advisor；`CodexAdvisor` 保留介面但預設失敗關閉，不會即時呼叫 LLM，也不會自動送出委託。
+
+建議先用本機控制台觀察：
+
+```bash
+.venv/bin/python run_web.py --host 127.0.0.1 --port 8766
+```
+
+開啟：
+
+```text
+http://127.0.0.1:8766/#shioaji
+```
+
+基本流程：
+- 在「AI 決策」頁籤跑一鍵候選流程或每日雷達。
+- 到「交易驗收」頁籤的「AI 提案工作台」輸入股票代號、資金與持股。
+- `Advisor Provider` 選 `stub`，按「產生 AI 提案」。
+- 檢查理由、風險、資料品質與 preview。
+- 不採納就按「婉拒提案」；採納模擬測試才勾選人工確認並按「確認送單」。
+
+Advisor API 摘要：
+- `POST /api/advisor/proposals`：產生 advisor decision，可選擇建立 order preview。
+- `POST /api/advisor/reject`：人工婉拒提案，只更新 decision record。
+- `POST /api/advisor/backtest`：執行 Advisor 回測。
+- `POST /api/advisor/backtest/export`：執行回測並匯出 HTML/CSV/JSON。
+- `POST /api/tw-live/order-approve-execute`：以 `preview_id` 還原委託，必須有 `manual_confirmed=true` 與 `promotion_gate_accepted=true`。
+
+Advisor 回測規則：
+- 使用隔離暫存 SQLite，不寫正式資料庫。
+- 第 `d` 天只使用第 `d` 天以前資料。
+- 成交價使用下一交易日 open。
+- 賣出款 T+2 才回到 cash。
+- FIFO lot、手續費、證交稅、勝率、期望值都會輸出。
+
+操作手冊與驗收清單：
+- `docs/advisor_decision_assist_runbook.md`
+- `docs/advisor_acceptance_checklist.md`
+
 ### 8) Shioaji 模擬測試與正式切換（Web）
 
 控制台提供五個交易測試動作：
@@ -189,6 +232,16 @@ python run_web.py --host 0.0.0.0 --port 8080
 - 正式環境下單測試預設鎖定，需在頁面勾選「允許正式環境下單測試」
 - 若 token 沒有正式權限，檢核結果會直接提示開通步驟
 - 所有流程結果皆保留 JSON raw 資料，便於除錯與稽核
+- 永豐模擬帳戶若不支援可用餘額，台股模擬測試會使用 `SHIOAJI_SIMULATION_CASH_FALLBACK`，預設 `1000000`
+- 若模擬帳戶沒有期貨帳戶，期貨測試會標示 skipped，不影響台股模擬驗證
+
+模擬健康檢查 API：
+
+```bash
+curl "http://127.0.0.1:8766/api/tw-live/health?simulation=true"
+```
+
+控制台「交易驗收」頁籤可執行一鍵模擬整套測試。
 
 ### 9) Shioaji 環境檢查（CLI）
 
@@ -250,9 +303,14 @@ SHIOAJI_SECRET=your_secret
 SHIOAJI_CA_PATH=/path/to/ca
 SHIOAJI_CA_PASSWORD=your_ca_password
 SHIOAJI_CA_PERSON_ID=your_person_id
+SHIOAJI_SIMULATION_CASH_FALLBACK=1000000
 FINMIND_API_KEY=your_finmind_api_key  # FinMind 資料同步與策略 C
 FINMIND_API_URL=https://api.finmindtrade.com/api/v4/data
 FINMIND_USER_INFO_URL=https://api.web.finmindtrade.com/v2/user_info
+CODEX_ADVISOR_ENABLED=        # 第一階段保持空白，使用 stub advisor
+OPENAI_API_KEY=
+OPENAI_ADVISOR_MODEL=
+OPENAI_ADVISOR_TIMEOUT_SEC=30
 ```
 
 在推上 GitHub 前，請確認：
@@ -260,6 +318,7 @@ FINMIND_USER_INFO_URL=https://api.web.finmindtrade.com/v2/user_info
 - `.env` 未被追蹤
 - `docs/shioaji/llms-full.txt` 未被追蹤
 - 不要將 API KEY 寫進任何程式碼
+- 第一階段不要設定 `CODEX_ADVISOR_ENABLED=1`
 
 ## 帳戶資訊與交易測試（正式帳戶）
 

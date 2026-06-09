@@ -123,6 +123,72 @@ class HoldingSharesPerDaily(Base):
     __table_args__ = (UniqueConstraint("symbol", "date", name="uq_holding_shares_per_symbol_date"),)
 
 
+class MonthlyRevenue(Base):
+    __tablename__ = "monthly_revenues"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), index=True)
+    period: Mapped[str] = mapped_column(String(7), index=True)
+    announce_date: Mapped[date] = mapped_column(Date, index=True)
+    revenue: Mapped[float] = mapped_column(Float, default=0.0)
+    revenue_yoy_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    revenue_mom_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(30), default="finmind")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("symbol", "period", name="uq_monthly_revenue_symbol_period"),)
+
+
+class FinancialStatementSummary(Base):
+    __tablename__ = "financial_statement_summaries"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), index=True)
+    period: Mapped[str] = mapped_column(String(10), index=True)
+    announce_date: Mapped[date] = mapped_column(Date, index=True)
+    eps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    roe_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gross_margin_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    operating_margin_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    debt_ratio_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    operating_cash_flow: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(30), default="finmind")
+    raw_json: Mapped[str] = mapped_column(Text, default="{}")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("symbol", "period", name="uq_financial_summary_symbol_period"),)
+
+
+class NewsEvent(Base):
+    __tablename__ = "news_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), index=True)
+    news_date: Mapped[date] = mapped_column(Date, index=True)
+    title: Mapped[str] = mapped_column(Text, default="")
+    source_name: Mapped[str] = mapped_column(String(80), default="")
+    url: Mapped[str] = mapped_column(Text, default="")
+    llm_summary: Mapped[str] = mapped_column(Text, default="")
+    risk_tags_json: Mapped[str] = mapped_column(Text, default="[]")
+    source: Mapped[str] = mapped_column(String(30), default="finmind")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("symbol", "news_date", "title", name="uq_news_event_symbol_date_title"),)
+
+
+class AdvisorDecisionRecord(Base):
+    __tablename__ = "advisor_decision_records"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    decision_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    advisor_name: Mapped[str] = mapped_column(String(80), default="", index=True)
+    advisor_version: Mapped[str] = mapped_column(String(80), default="")
+    symbol: Mapped[str] = mapped_column(String(20), default="", index=True)
+    action: Mapped[str] = mapped_column(String(16), default="reject", index=True)
+    status: Mapped[str] = mapped_column(String(24), default="created", index=True)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    preview_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    request_json: Mapped[str] = mapped_column(Text, default="{}")
+    decision_json: Mapped[str] = mapped_column(Text, default="{}")
+    validation_errors_json: Mapped[str] = mapped_column(Text, default="[]")
+    rejected_reason: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class FeatureSnapshot(Base):
     __tablename__ = "feature_snapshots"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -142,6 +208,11 @@ class FeatureSnapshot(Base):
     chip_concentration_proxy: Mapped[float] = mapped_column(Float, default=0.0)
     chip_concentration_up3: Mapped[bool] = mapped_column(Boolean, default=False)
     disposition_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    revenue_score: Mapped[float] = mapped_column(Float, default=0.5)
+    quality_score: Mapped[float] = mapped_column(Float, default=0.5)
+    valuation_or_growth_score: Mapped[float] = mapped_column(Float, default=0.5)
+    news_risk_score: Mapped[float] = mapped_column(Float, default=0.5)
+    fundamental_data_quality: Mapped[str] = mapped_column(String(20), default="missing")
     entry_ready: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     meta_json: Mapped[str] = mapped_column(Text, default="{}")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -222,6 +293,7 @@ class OrderPreviewRecord(Base):
     position_before: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(32), default="created", index=True)
     reason: Mapped[str] = mapped_column(Text, default="")
+    intent_json: Mapped[str] = mapped_column(Text, default="{}")
     preview_json: Mapped[str] = mapped_column(Text, default="{}")
     decision_json: Mapped[str] = mapped_column(Text, default="{}")
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
@@ -310,6 +382,13 @@ class DailyRadarSnapshot(Base):
     reason_tags_json: Mapped[str] = mapped_column(Text, default="[]")
     blocker_tags_json: Mapped[str] = mapped_column(Text, default="[]")
     data_quality: Mapped[str] = mapped_column(String(20), default="unknown")
+    fundamental_data_quality: Mapped[str] = mapped_column(String(20), default="missing")
+    revenue_score: Mapped[float] = mapped_column(Float, default=0.5)
+    quality_score: Mapped[float] = mapped_column(Float, default=0.5)
+    valuation_or_growth_score: Mapped[float] = mapped_column(Float, default=0.5)
+    news_risk_score: Mapped[float] = mapped_column(Float, default=0.5)
+    fundamental_summary_json: Mapped[str] = mapped_column(Text, default="{}")
+    news_summary_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     __table_args__ = (UniqueConstraint("run_id", "symbol", name="uq_daily_radar_run_symbol"),)
 

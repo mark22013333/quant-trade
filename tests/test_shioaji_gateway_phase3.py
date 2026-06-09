@@ -95,6 +95,30 @@ def test_safe_place_stock_order_rejects_when_second_cash_check_fails():
     assert gateway.api.placed is None
 
 
+def test_safe_place_stock_order_uses_simulation_cash_fallback_when_balance_unavailable(monkeypatch):
+    monkeypatch.setenv("SHIOAJI_SIMULATION_CASH_FALLBACK", "20000")
+    gateway = ShioajiGateway(ShioajiConfig(simulation=True))
+    gateway.api = BalanceFailingAPI([0.0, 0.0])
+
+    result = gateway.safe_place_stock_order(symbol="2330", current_price=100.0, quantity=1, use_odd_lot=True)
+
+    assert result["passed"] is True
+    checks = {item["name"]: item for item in result["pretrade_checks"]}
+    assert checks["capital_guard_first"]["cash_source"].startswith("simulation_cash_fallback")
+    assert checks["capital_guard_second"]["cash_source"].startswith("simulation_cash_fallback")
+
+
+def test_safe_place_stock_order_does_not_fallback_live_balance(monkeypatch):
+    monkeypatch.setenv("SHIOAJI_ENABLE_LIVE_ORDERS", "1")
+    gateway = ShioajiGateway(ShioajiConfig(simulation=False, allow_live_order=True))
+    gateway.api = BalanceFailingAPI([0.0, 0.0])
+
+    with pytest.raises(RuntimeError, match="unable to read account balance"):
+        gateway.safe_place_stock_order(symbol="2330", current_price=100.0, quantity=1, use_odd_lot=True)
+
+    assert gateway.api.placed is None
+
+
 def test_execute_stock_order_in_thread_aborts_failed_order_thread():
     gateway = ShioajiGateway(ShioajiConfig(simulation=True))
     gateway.api = DummyAPI([1000.0, 1000.0])

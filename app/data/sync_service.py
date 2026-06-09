@@ -146,6 +146,94 @@ class SyncService:
         }
         return self._finalize_sync_result("sync_disposition_periods", result, failed, start_date=start_date, end_date=end_date)
 
+    def sync_monthly_revenues(self, start_date: date, end_date: date, symbols: list[str] | None = None) -> dict:
+        symbols = self._resolve_symbols(symbols)
+        total_rows = 0
+        failed: list[dict] = []
+        for symbol in symbols:
+            try:
+                rows = self.finmind.fetch_monthly_revenue(symbol, start_date, end_date)
+                total_rows += self.repo.upsert_monthly_revenues(symbol, rows)
+            except Exception as exc:  # noqa: BLE001
+                failed.append(self._failure("monthly_revenue", exc, symbol=symbol))
+        result = {
+            "symbols_total": len(symbols),
+            "rows_upserted": total_rows,
+        }
+        return self._finalize_sync_result("sync_monthly_revenues", result, failed, start_date=start_date, end_date=end_date)
+
+    def sync_financial_statement_summaries(self, start_date: date, end_date: date, symbols: list[str] | None = None) -> dict:
+        symbols = self._resolve_symbols(symbols)
+        total_rows = 0
+        failed: list[dict] = []
+        for symbol in symbols:
+            try:
+                rows = self.finmind.fetch_financial_statement_summary(symbol, start_date, end_date)
+                total_rows += self.repo.upsert_financial_statement_summaries(symbol, rows)
+            except Exception as exc:  # noqa: BLE001
+                failed.append(self._failure("financial_statement_summary", exc, symbol=symbol))
+        result = {
+            "symbols_total": len(symbols),
+            "rows_upserted": total_rows,
+        }
+        return self._finalize_sync_result(
+            "sync_financial_statement_summaries",
+            result,
+            failed,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    def sync_news_events(self, start_date: date, end_date: date, symbols: list[str] | None = None) -> dict:
+        symbols = self._resolve_symbols(symbols)
+        total_rows = 0
+        failed: list[dict] = []
+        for symbol in symbols:
+            try:
+                rows = self.finmind.fetch_stock_news(symbol, start_date, end_date)
+                total_rows += self.repo.upsert_news_events(symbol, rows)
+            except Exception as exc:  # noqa: BLE001
+                failed.append(self._failure("news_events", exc, symbol=symbol))
+        result = {
+            "symbols_total": len(symbols),
+            "rows_upserted": total_rows,
+        }
+        return self._finalize_sync_result("sync_news_events", result, failed, start_date=start_date, end_date=end_date)
+
+    def sync_fundamental_bundle(
+        self,
+        start_date: date,
+        end_date: date,
+        symbols: list[str] | None = None,
+        include_news: bool = True,
+    ) -> dict:
+        bundle = {
+            "monthly_revenues": self.sync_monthly_revenues(start_date=start_date, end_date=end_date, symbols=symbols),
+            "financial_statement_summaries": self.sync_financial_statement_summaries(
+                start_date=start_date,
+                end_date=end_date,
+                symbols=symbols,
+            ),
+        }
+        if include_news:
+            bundle["news_events"] = self.sync_news_events(start_date=start_date, end_date=end_date, symbols=symbols)
+        summary = self._bundle_summary(bundle)
+        total_rows = summary["rows_upserted_total"]
+        self.repo.add_sync_job(
+            "sync_fundamental_bundle",
+            status="partial" if summary["partial_failure"] else "ok",
+            rows_upserted=total_rows,
+            error_msg=self._sync_metadata({"sync_quality": summary["sync_quality"], **summary}),
+        )
+        return {
+            "rows_upserted_total": total_rows,
+            "partial_failure": summary["partial_failure"],
+            "failed_count_total": summary["failed_count_total"],
+            "degraded_count": summary["degraded_count"],
+            "sync_quality": summary["sync_quality"],
+            "bundle": bundle,
+        }
+
     def sync_shareholding(self, start_date: date, end_date: date, symbols: list[str] | None = None) -> dict:
         symbols = self._resolve_symbols(symbols)
         symbol_set = set(symbols)
@@ -292,6 +380,8 @@ class SyncService:
         include_institutional: bool = True,
         include_broker_agg: bool = True,
         include_disposition: bool = True,
+        include_fundamentals: bool = False,
+        include_news: bool = False,
     ) -> dict:
         bundle: dict[str, dict] = {}
         if include_bars:
@@ -302,6 +392,15 @@ class SyncService:
             bundle["broker_agg_chip"] = self.sync_broker_agg_chip(start_date=start_date, end_date=end_date, symbols=symbols)
         if include_disposition:
             bundle["disposition_periods"] = self.sync_disposition_periods(start_date=start_date, end_date=end_date, symbols=symbols)
+        if include_fundamentals:
+            bundle["monthly_revenues"] = self.sync_monthly_revenues(start_date=start_date, end_date=end_date, symbols=symbols)
+            bundle["financial_statement_summaries"] = self.sync_financial_statement_summaries(
+                start_date=start_date,
+                end_date=end_date,
+                symbols=symbols,
+            )
+        if include_news:
+            bundle["news_events"] = self.sync_news_events(start_date=start_date, end_date=end_date, symbols=symbols)
         summary = self._bundle_summary(bundle)
         total_rows = summary["rows_upserted_total"]
         self.repo.add_sync_job(

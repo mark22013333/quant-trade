@@ -108,6 +108,69 @@ def test_simulation_suite_aggregates_step_results(monkeypatch):
     assert result["checks"]["futures_order"]["passed"] is False
 
 
+def test_simulation_suite_skips_futures_when_account_missing(monkeypatch):
+    service = _build_service()
+    context = SimpleNamespace(
+        accounts=[{"id": "A1"}],
+        production_permission=True,
+        ca_activated=False,
+        env_status={},
+        shioaji_version="1.2.0",
+    )
+
+    @contextmanager
+    def fake_session(*, simulation, activate_ca):  # noqa: ARG001
+        yield object(), context
+
+    monkeypatch.setattr(service, "_session", fake_session)
+    monkeypatch.setattr(service.gateway, "pick_futures_account", lambda _api, _accounts=None: None)
+    monkeypatch.setattr(
+        service,
+        "_execute_stock_order",
+        lambda **kwargs: {"passed": True, "message": "stock ok", "status": "Filled"},
+    )
+
+    result = service.run_simulation_suite(OrderTestConfig(simulation=True))
+
+    assert result["passed"] is True
+    assert result["checks"]["stock_order"]["passed"] is True
+    assert result["checks"]["futures_order"]["passed"] is True
+    assert result["checks"]["futures_order"]["skipped"] is True
+
+
+def test_simulation_suite_skips_futures_when_core_gateway_has_no_account(monkeypatch):
+    service = _build_service()
+    context = SimpleNamespace(
+        accounts=[{"id": "A1"}],
+        production_permission=True,
+        ca_activated=False,
+        env_status={},
+        shioaji_version="1.2.0",
+    )
+
+    @contextmanager
+    def fake_session(*, simulation, activate_ca):  # noqa: ARG001
+        yield object(), context
+
+    monkeypatch.setattr(service, "_session", fake_session)
+    monkeypatch.setattr(
+        service,
+        "_execute_stock_order",
+        lambda **kwargs: {"passed": True, "message": "stock ok", "status": "Filled"},
+    )
+
+    def fail_futures(**kwargs):  # noqa: ARG001
+        raise RuntimeError("futures account not found")
+
+    monkeypatch.setattr(service, "_execute_futures_order", fail_futures)
+
+    result = service.run_simulation_suite(OrderTestConfig(simulation=True))
+
+    assert result["passed"] is True
+    assert result["checks"]["futures_order"]["passed"] is True
+    assert result["checks"]["futures_order"]["skipped"] is True
+
+
 def test_verify_production_ready_success(monkeypatch):
     service = ShioajiWorkflowService(gateway=WebShioajiGateway(Path(".env")))
     account = SimpleNamespace(account_id="1234567890", account_type="stock", signed=True)
@@ -236,8 +299,9 @@ def test_futures_order_execution_uses_order_intent_pipeline():
     class Api:
         def __init__(self):
             self.futopt_account = SimpleNamespace(account_id="FUTURES-ACC")
+            contract = SimpleNamespace(code="TXF202606", reference=18000.0, limit_down=17000.0, limit_up=19000.0)
             self.Contracts = SimpleNamespace(
-                Futures={"TXF": SimpleNamespace(code="TXF", reference=18000.0, limit_down=17000.0, limit_up=19000.0)}
+                Futures={"TXFC0": contract, "TXF202606": contract}
             )
             self.placed = None
 
@@ -252,14 +316,18 @@ def test_futures_order_execution_uses_order_intent_pipeline():
 
     result = service._execute_futures_order(
         api=api,
-        futures_code="TXF",
+        futures_code="TXFC0",
         quantity=1,
         order_price=18000.0,
         simulation=True,
     )
 
     assert result["passed"] is True
+    assert result["futures_code"] == "TXF202606"
+    assert result["requested_futures_code"] == "TXFC0"
+    assert result["intent"]["symbol"] == "TXF202606"
     assert result["intent"]["metadata"]["instrument_type"] == "futures"
+    assert result["intent"]["metadata"]["requested_futures_code"] == "TXFC0"
     assert result["execution"]["executed"] is True
     assert result["execution"]["raw_trade"]["token"] != "secret-token-value"
     assert api.placed is not None

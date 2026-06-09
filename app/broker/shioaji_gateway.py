@@ -191,6 +191,20 @@ class ShioajiGateway:
                 return float(value)
         raise RuntimeError("unable to read account balance")
 
+    def _get_available_cash_for_order(self) -> tuple[float, str]:
+        try:
+            cash = float(self.get_available_cash())
+            if cash > 0 or not self.config.simulation:
+                return cash, "account_balance"
+        except Exception as exc:  # noqa: BLE001
+            if not self.config.simulation:
+                raise
+            reason = f"simulation_cash_fallback:{type(exc).__name__}"
+        else:
+            reason = "simulation_cash_fallback:zero_balance"
+        fallback = float(os.getenv("SHIOAJI_SIMULATION_CASH_FALLBACK", "1000000") or 1_000_000)
+        return max(1.0, fallback), reason
+
     def _get_stock_contract(self, symbol: str):
         if self.api is None:
             self.login()
@@ -446,7 +460,7 @@ class ShioajiGateway:
         checks.append({"name": "daily_order_limit", "passed": True})
 
         if normalized_side == "buy":
-            first_available_cash = self.get_available_cash()
+            first_available_cash, first_cash_source = self._get_available_cash_for_order()
             settlement_adjusted_cash = float(first_available_cash) - max(0.0, float(pending_settlement_amount or 0.0))
             if quantity is not None:
                 approved_qty = int(quantity)
@@ -462,6 +476,7 @@ class ShioajiGateway:
                 capital_ok = bool(check.accepted)
         else:
             first_available_cash = None
+            first_cash_source = "sell_order_no_cash_required"
             settlement_adjusted_cash = None
             approved_qty = int(quantity or 0)
             estimated_total_cost = 0.0
@@ -472,6 +487,7 @@ class ShioajiGateway:
                 "name": "capital_guard_first",
                 "passed": bool(capital_ok),
                 "available_cash": float(first_available_cash) if first_available_cash is not None else None,
+                "cash_source": first_cash_source,
                 "settlement_adjusted_cash": float(settlement_adjusted_cash) if settlement_adjusted_cash is not None else None,
                 "qty": int(approved_qty),
                 "estimated_total_cost": float(estimated_total_cost),
@@ -528,7 +544,11 @@ class ShioajiGateway:
         if not position_ok:
             raise PreTradeCheckError("pre-trade check rejected: position_quantity_for_sell")
 
-        second_available_cash = self.get_available_cash() if normalized_side == "buy" else None
+        second_cash_source = "sell_order_no_cash_required"
+        if normalized_side == "buy":
+            second_available_cash, second_cash_source = self._get_available_cash_for_order()
+        else:
+            second_available_cash = None
         second_adjusted_cash = (
             float(second_available_cash) - max(0.0, float(pending_settlement_amount or 0.0))
             if second_available_cash is not None
@@ -540,6 +560,7 @@ class ShioajiGateway:
                 "name": "capital_guard_second",
                 "passed": bool(second_capital_ok),
                 "available_cash": float(second_available_cash) if second_available_cash is not None else None,
+                "cash_source": second_cash_source,
                 "settlement_adjusted_cash": float(second_adjusted_cash) if second_adjusted_cash is not None else None,
                 "estimated_total_cost": float(estimated_total_cost),
             }

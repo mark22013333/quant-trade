@@ -347,6 +347,36 @@
         </div>
       </div>
 
+      <div class="card" style="margin-top:10px;">
+        <h3>AI 提案工作台</h3>
+        <p>TradingAdvisor 只產生提案與下單預覽，確認或婉拒仍由人類決定。</p>
+        <div class="form-grid three">
+          <label>提案股票代號<input type="text" id="advisor-symbol" value="2330" /></label>
+          <label>交易日期<input type="date" id="advisor-trade-date" /></label>
+          <label>可用資金<input type="number" id="advisor-cash" value="10000" min="0" /></label>
+          <label>目前持股<input type="number" id="advisor-position" value="0" min="0" /></label>
+          <label>回測開始日<input type="date" id="advisor-bt-start" /></label>
+          <label>回測結束日<input type="date" id="advisor-bt-end" /></label>
+          <label>回測天數上限<input type="number" id="advisor-bt-days" value="20" min="2" max="60" /></label>
+          <label>Advisor Provider
+            <select id="advisor-provider">
+              <option value="stub">Stub（不燒 Token）</option>
+              <option value="codex">Codex（預設停用）</option>
+            </select>
+          </label>
+          <label class="checkbox-line"><input type="checkbox" id="advisor-create-preview" checked />產生下單 Preview</label>
+          <label class="checkbox-line"><input type="checkbox" id="advisor-manual-confirmed" />我確認要送出預覽委託</label>
+        </div>
+        <div class="action-row">
+          <button class="action-btn" id="advisor-create-proposal">產生 AI 提案</button>
+          <button class="action-btn ghost" id="advisor-reject">婉拒提案</button>
+          <button class="action-btn secondary" id="advisor-approve-execute">確認送單</button>
+          <button class="action-btn ghost" id="advisor-run-backtest">Advisor 回測</button>
+          <button class="action-btn ghost" id="advisor-export-backtest">匯出 Advisor 回測</button>
+          <div class="result" id="advisor-result"></div>
+        </div>
+      </div>
+
       <div class="form-grid three" style="margin-top:10px;">
         <label>證券代號
           <input type="text" id="trade-stock-code" value="2890" />
@@ -358,7 +388,7 @@
           <input type="number" id="trade-stock-price" min="1" step="0.01" />
         </label>
         <label>期貨商品代號
-          <input type="text" id="trade-futures-code" value="TXFC0" />
+          <input type="text" id="trade-futures-code" value="TXF" />
         </label>
         <label>期貨口數
           <input type="number" id="trade-futures-qty" value="1" min="1" max="10" />
@@ -1761,7 +1791,7 @@
         stock_code: document.getElementById('trade-stock-code').value || '2890',
         stock_quantity: toNumber(document.getElementById('trade-stock-qty').value, 1),
         stock_price: toNumber(document.getElementById('trade-stock-price').value, null),
-        futures_code: document.getElementById('trade-futures-code').value || 'TXFC0',
+        futures_code: document.getElementById('trade-futures-code').value || 'TXF',
         futures_quantity: toNumber(document.getElementById('trade-futures-qty').value, 1),
         futures_price: toNumber(document.getElementById('trade-futures-price').value, null),
         interval_sec: toNumber(document.getElementById('trade-interval').value, 1.1)
@@ -2012,6 +2042,9 @@
       el.textContent = JSON.stringify(payload, null, 2);
     }
 
+    let latestAdvisorDecisionId = '';
+    let latestAdvisorPreviewId = '';
+
     async function refreshTwLiveHealth() {
       try {
         const simulation = document.getElementById('trade-sim').checked;
@@ -2074,6 +2107,98 @@
         renderInlineJson('tw-gate-result', await res.json());
       } catch (err) {
         renderInlineJson('tw-gate-result', { status: 'error', error: err?.message || String(err) });
+      }
+    }
+
+    async function createAdvisorProposal() {
+      try {
+        const res = await fetch('/api/advisor/proposals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            simulation: document.getElementById('trade-sim').checked,
+            symbol: document.getElementById('advisor-symbol').value,
+            trade_date: document.getElementById('advisor-trade-date').value || null,
+            available_cash: toNumber(document.getElementById('advisor-cash').value, 10000),
+            position_qty: toNumber(document.getElementById('advisor-position').value, 0),
+            create_preview: document.getElementById('advisor-create-preview').checked,
+            advisor_provider: document.getElementById('advisor-provider').value
+          })
+        });
+        const payload = await res.json();
+        latestAdvisorDecisionId = payload?.data?.decision?.decision_id || '';
+        latestAdvisorPreviewId = payload?.data?.preview?.preview_id || payload?.data?.decision?.preview_id || '';
+        renderInlineJson('advisor-result', payload);
+      } catch (err) {
+        renderInlineJson('advisor-result', { status: 'error', error: err?.message || String(err) });
+      }
+    }
+
+    async function rejectAdvisorProposal() {
+      try {
+        const res = await fetch('/api/advisor/reject', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decision_id: latestAdvisorDecisionId, reason: 'manual_rejected_from_control_panel' })
+        });
+        renderInlineJson('advisor-result', await res.json());
+      } catch (err) {
+        renderInlineJson('advisor-result', { status: 'error', error: err?.message || String(err) });
+      }
+    }
+
+    async function approveAdvisorPreview() {
+      try {
+        const res = await fetch('/api/tw-live/order-approve-execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            preview_id: latestAdvisorPreviewId,
+            manual_confirmed: document.getElementById('advisor-manual-confirmed').checked,
+            promotion_gate_accepted: true,
+            simulation: document.getElementById('trade-sim').checked
+          })
+        });
+        renderInlineJson('advisor-result', await res.json());
+      } catch (err) {
+        renderInlineJson('advisor-result', { status: 'error', error: err?.message || String(err) });
+      }
+    }
+
+    async function runAdvisorBacktest() {
+      try {
+        const res = await fetch('/api/advisor/backtest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(advisorBacktestPayload())
+        });
+        renderInlineJson('advisor-result', await res.json());
+      } catch (err) {
+        renderInlineJson('advisor-result', { status: 'error', error: err?.message || String(err) });
+      }
+    }
+
+    function advisorBacktestPayload() {
+      return {
+        symbol: document.getElementById('advisor-symbol').value,
+        start_date: document.getElementById('advisor-bt-start').value,
+        end_date: document.getElementById('advisor-bt-end').value,
+        initial_cash: toNumber(document.getElementById('advisor-cash').value, 10000),
+        max_days: toNumber(document.getElementById('advisor-bt-days').value, 20),
+        advisor_provider: document.getElementById('advisor-provider').value
+      };
+    }
+
+    async function exportAdvisorBacktest() {
+      try {
+        const res = await fetch('/api/advisor/backtest/export', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(advisorBacktestPayload())
+        });
+        renderInlineJson('advisor-result', await res.json());
+      } catch (err) {
+        renderInlineJson('advisor-result', { status: 'error', error: err?.message || String(err) });
       }
     }
 
@@ -2285,6 +2410,11 @@
     document.getElementById('tw-create-preview').addEventListener('click', createTwOrderPreview);
     document.getElementById('tw-check-gate').addEventListener('click', checkTwPromotionGate);
     document.getElementById('tw-refresh-audit').addEventListener('click', refreshTwAudit);
+    document.getElementById('advisor-create-proposal').addEventListener('click', createAdvisorProposal);
+    document.getElementById('advisor-reject').addEventListener('click', rejectAdvisorProposal);
+    document.getElementById('advisor-approve-execute').addEventListener('click', approveAdvisorPreview);
+    document.getElementById('advisor-run-backtest').addEventListener('click', runAdvisorBacktest);
+    document.getElementById('advisor-export-backtest').addEventListener('click', exportAdvisorBacktest);
     document.getElementById('refresh-finmind-usage').addEventListener('click', refreshFinMindUsage);
     document.getElementById('refresh-data-health').addEventListener('click', refreshDataHealth);
     document.getElementById('refresh-pipeline-runs').addEventListener('click', () => refreshPipelineRuns(20));

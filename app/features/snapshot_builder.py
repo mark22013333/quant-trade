@@ -5,6 +5,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import pandas as pd
+from app.services.scoring import _fundamental_scores
 
 if TYPE_CHECKING:
     from app.db.repository import TradingRepository
@@ -205,6 +206,9 @@ def rebuild_feature_snapshots(
                     "kd_trigger": bool(row["kd_trigger"]),
                     "chip_ok": bool(row["chip_ok"]),
                 }
+                fundamentals = _fundamental_scores(repo, symbol=symbol, trade_date=idx.date())
+                meta["fundamental_summary"] = fundamentals["fundamental_summary"]
+                meta["news_summary"] = fundamentals["news_summary"]
                 records.append(
                     {
                         "date": idx.date(),
@@ -222,6 +226,11 @@ def rebuild_feature_snapshots(
                         "chip_concentration_proxy": float(row["chip_concentration_proxy"]),
                         "chip_concentration_up3": bool(row["chip_concentration_up3"]),
                         "disposition_active": bool(row["disposition_active"]),
+                        "revenue_score": float(fundamentals["revenue_score"]),
+                        "quality_score": float(fundamentals["quality_score"]),
+                        "valuation_or_growth_score": float(fundamentals["valuation_or_growth_score"]),
+                        "news_risk_score": float(fundamentals["news_risk_score"]),
+                        "fundamental_data_quality": str(fundamentals["fundamental_data_quality"]),
                         "entry_ready": bool(row["entry_ready"]),
                         "meta_json": json.dumps(meta, ensure_ascii=False),
                     }

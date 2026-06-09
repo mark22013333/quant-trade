@@ -77,6 +77,10 @@ def generate_daily_radar(
             f"TRIGGER={bool(signal.get('trigger'))}",
             f"TRIGGER_REASON={signal.get('trigger_reason', 'none')}",
             f"CHIP_UP3={scored.chip_up3}",
+            f"FUNDAMENTAL_QUALITY={scored.fundamental_data_quality}",
+            f"REVENUE_SCORE={scored.revenue_score:.2f}",
+            f"QUALITY_SCORE={scored.quality_score:.2f}",
+            f"NEWS_RISK_SCORE={scored.news_risk_score:.2f}",
             f"ENTRY_SCORE={entry_score:.2f}",
         ]
 
@@ -93,6 +97,13 @@ def generate_daily_radar(
                 "blocker_tags": blocker_tags,
                 "last_bar_date": scored.last_bar_date,
                 "data_quality": scored.data_quality,
+                "fundamental_data_quality": scored.fundamental_data_quality,
+                "revenue_score": float(scored.revenue_score),
+                "quality_score": float(scored.quality_score),
+                "valuation_or_growth_score": float(scored.valuation_or_growth_score),
+                "news_risk_score": float(scored.news_risk_score),
+                "fundamental_summary": scored.fundamental_summary,
+                "news_summary": scored.news_summary,
             }
         )
 

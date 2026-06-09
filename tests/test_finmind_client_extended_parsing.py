@@ -71,3 +71,73 @@ def test_fetch_broker_agg_by_date_groups_rows_by_symbol(monkeypatch):
     assert set(result_map.keys()) == {"2330", "2317"}
     assert result_map["2330"]["top5_net_buy"] == 160.0
     assert result_map["2317"]["top5_net_buy"] == 40.0
+
+
+def test_fetch_monthly_revenue_normalizes_growth_fields(monkeypatch):
+    client = FinMindClient(api_key="dummy")
+    rows = [
+        {
+            "date": "2024-02-10",
+            "revenue_month": "2024-01",
+            "revenue": "100000",
+            "revenue_year": "12.5",
+            "mom_growth_pct": "-3.2",
+        }
+    ]
+    monkeypatch.setattr(client, "_request_dataset", lambda dataset, **kwargs: rows)  # noqa: ARG005
+
+    result = client.fetch_monthly_revenue("2330", "2024-01-01", "2024-02-29")
+
+    assert result == [
+        {
+            "period": "2024-01",
+            "announce_date": date(2024, 2, 10),
+            "revenue": 100000.0,
+            "revenue_yoy_pct": 12.5,
+            "revenue_mom_pct": -3.2,
+            "source": "finmind",
+        }
+    ]
+
+
+def test_fetch_financial_statement_summary_merges_statement_rows(monkeypatch):
+    client = FinMindClient(api_key="dummy")
+
+    def _dataset(dataset, **kwargs):  # noqa: ANN001, ARG001
+        if dataset == "TaiwanStockFinancialStatements":
+            return [
+                {"date": "2024-05-15", "type": "EPS", "value": "2.3"},
+                {"date": "2024-05-15", "type": "毛利率", "value": "45.0"},
+                {"date": "2024-05-15", "type": "營益率", "value": "30.0"},
+            ]
+        if dataset == "TaiwanStockBalanceSheet":
+            return [{"date": "2024-05-15", "type": "負債比", "value": "35.0"}]
+        if dataset == "TaiwanStockCashFlowsStatement":
+            return [{"date": "2024-05-15", "type": "營業活動現金流量", "value": "1000"}]
+        return []
+
+    monkeypatch.setattr(client, "_request_dataset", _dataset)
+
+    result = client.fetch_financial_statement_summary("2330", "2024-01-01", "2024-06-30")
+
+    assert len(result) == 1
+    assert result[0]["period"] == "2024-Q2"
+    assert result[0]["eps"] == 2.3
+    assert result[0]["gross_margin_pct"] == 45.0
+    assert result[0]["operating_margin_pct"] == 30.0
+    assert result[0]["debt_ratio_pct"] == 35.0
+    assert result[0]["operating_cash_flow"] == 1000.0
+
+
+def test_fetch_stock_news_infers_risk_tags(monkeypatch):
+    client = FinMindClient(api_key="dummy")
+    rows = [
+        {"date": "2024-06-01", "title": "公司上修獲利並創高", "source_name": "news", "url": "https://example.test/a"},
+        {"date": "2024-06-02", "title": "公司遭處分且營運下修", "source_name": "news"},
+    ]
+    monkeypatch.setattr(client, "_request_dataset", lambda dataset, **kwargs: rows)  # noqa: ARG005
+
+    result = client.fetch_stock_news("2330", "2024-06-01", "2024-06-30")
+
+    assert result[0]["risk_tags"] == ["positive_event"]
+    assert "negative_event" in result[1]["risk_tags"]

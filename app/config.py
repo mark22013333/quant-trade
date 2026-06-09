@@ -21,6 +21,9 @@ class AppConfig:
     telegram_bot_token: str
     telegram_chat_id: str
     line_notify_token: str
+    openai_api_key: str
+    openai_advisor_model: str
+    openai_advisor_timeout_sec: int
 
 
 def load_config() -> AppConfig:
@@ -33,4 +36,7 @@ def load_config() -> AppConfig:
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
         line_notify_token=os.getenv("LINE_NOTIFY_TOKEN", "").strip(),
+        openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
+        openai_advisor_model=os.getenv("OPENAI_ADVISOR_MODEL", "").strip(),
+        openai_advisor_timeout_sec=int(os.getenv("OPENAI_ADVISOR_TIMEOUT_SEC", "30")),
     )

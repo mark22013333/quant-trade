@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import json
 from collections import defaultdict
 from datetime import date, datetime
 
@@ -81,6 +82,45 @@ class FinMindClient:
             if text.endswith(suffix):
                 text = text[: -len(suffix)]
         return text
+
+    @staticmethod
+    def _normalize_period(value, fallback_date: date | None = None, month_only: bool = False) -> str:
+        text = str(value or "").strip()
+        if text:
+            match = re.search(r"(\d{4})[-/](\d{1,2})", text)
+            if match:
+                return f"{int(match.group(1)):04d}-{int(match.group(2)):02d}" if month_only else f"{int(match.group(1)):04d}-Q{((int(match.group(2)) - 1) // 3) + 1}"
+            quarter = re.search(r"(\d{4})\D*[Qq季](\d)", text)
+            if quarter:
+                return f"{int(quarter.group(1)):04d}-Q{int(quarter.group(2))}"
+            if re.fullmatch(r"\d{6}", text):
+                return f"{text[:4]}-{text[4:6]}" if month_only else f"{text[:4]}-Q{((int(text[4:6]) - 1) // 3) + 1}"
+        if fallback_date is not None:
+            if month_only:
+                return fallback_date.strftime("%Y-%m")
+            return f"{fallback_date.year:04d}-Q{((fallback_date.month - 1) // 3) + 1}"
+        return ""
+
+    @staticmethod
+    def _default_announce_date(period: str, fallback: date | None = None) -> date | None:
+        if fallback is not None:
+            return fallback
+        month_match = re.fullmatch(r"(\d{4})-(\d{2})", str(period or ""))
+        if month_match:
+            year = int(month_match.group(1))
+            month = int(month_match.group(2))
+            if month == 12:
+                return date(year + 1, 1, 10)
+            return date(year, month + 1, 10)
+        quarter_match = re.fullmatch(r"(\d{4})-Q([1-4])", str(period or ""))
+        if quarter_match:
+            year = int(quarter_match.group(1))
+            quarter = int(quarter_match.group(2))
+            month = quarter * 3
+            if quarter == 4:
+                return date(year + 1, 3, 31)
+            return date(year, month + 2, 15)
+        return None
 
     def _row_symbol(self, row: dict, fallback: str | None = None) -> str:
         raw = self._pick(row, "stock_id", "data_id", "symbol", "code")
@@ -401,6 +441,181 @@ class FinMindClient:
                 }
             )
         return rows
+
+    def fetch_monthly_revenue(self, stock_id: str, start_date: str | date, end_date: str | date) -> list[dict]:
+        payload_rows = self._request_dataset(
+            dataset="TaiwanStockMonthRevenue",
+            data_id=str(stock_id),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        rows: list[dict] = []
+        for row in payload_rows:
+            row_date = self._to_date(self._pick(row, "date", "revenue_month", "month"))
+            period = self._normalize_period(
+                self._pick(row, "period", "revenue_month", "month", "date"),
+                fallback_date=row_date,
+                month_only=True,
+            )
+            announce_date = self._to_date(self._pick(row, "announce_date", "publication_date", "date")) or self._default_announce_date(
+                period,
+                fallback=row_date,
+            )
+            revenue = self._to_float(
+                self._pick(row, "revenue", "Revenue", "monthly_revenue", "當月營收", "current_month_revenue")
+            )
+            if not period or announce_date is None or revenue is None:
+                continue
+            rows.append(
+                {
+                    "period": period,
+                    "announce_date": announce_date,
+                    "revenue": float(revenue),
+                    "revenue_yoy_pct": self._to_float(self._pick(row, "revenue_year", "yoy_growth_pct", "YoY", "yoy")),
+                    "revenue_mom_pct": self._to_float(self._pick(row, "mom_growth_pct", "MoM", "mom", "month_growth_pct")),
+                    "source": "finmind",
+                }
+            )
+        return rows
+
+    def fetch_financial_statement_summary(self, stock_id: str, start_date: str | date, end_date: str | date) -> list[dict]:
+        datasets = [
+            "TaiwanStockFinancialStatements",
+            "TaiwanStockBalanceSheet",
+            "TaiwanStockCashFlowsStatement",
+        ]
+        by_period: dict[str, dict] = {}
+        for dataset in datasets:
+            try:
+                payload_rows = self._request_dataset(
+                    dataset=dataset,
+                    data_id=str(stock_id),
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            except Exception:
+                continue
+            for row in payload_rows:
+                row_date = self._to_date(self._pick(row, "date", "announce_date", "publication_date"))
+                period = self._normalize_period(
+                    self._pick(row, "period", "quarter", "season", "date"),
+                    fallback_date=row_date,
+                    month_only=False,
+                )
+                announce_date = self._to_date(self._pick(row, "announce_date", "publication_date", "date")) or self._default_announce_date(
+                    period,
+                    fallback=row_date,
+                )
+                if not period or announce_date is None:
+                    continue
+                bucket = by_period.setdefault(
+                    period,
+                    {
+                        "period": period,
+                        "announce_date": announce_date,
+                        "eps": None,
+                        "roe_pct": None,
+                        "gross_margin_pct": None,
+                        "operating_margin_pct": None,
+                        "debt_ratio_pct": None,
+                        "operating_cash_flow": None,
+                        "source": "finmind",
+                        "raw": [],
+                    },
+                )
+                bucket["announce_date"] = max(bucket["announce_date"], announce_date)
+                bucket["raw"].append(row)
+                self._merge_financial_metric(bucket, row)
+
+        rows: list[dict] = []
+        for period in sorted(by_period.keys()):
+            item = by_period[period]
+            rows.append(
+                {
+                    "period": item["period"],
+                    "announce_date": item["announce_date"],
+                    "eps": item["eps"],
+                    "roe_pct": item["roe_pct"],
+                    "gross_margin_pct": item["gross_margin_pct"],
+                    "operating_margin_pct": item["operating_margin_pct"],
+                    "debt_ratio_pct": item["debt_ratio_pct"],
+                    "operating_cash_flow": item["operating_cash_flow"],
+                    "source": "finmind",
+                    "raw_json": json.dumps(item["raw"], ensure_ascii=False, default=str),
+                }
+            )
+        return rows
+
+    def _merge_financial_metric(self, bucket: dict, row: dict) -> None:
+        label = str(self._pick(row, "type", "name", "account", "label", "statement_item") or "").lower()
+        value = self._to_float(self._pick(row, "value", "amount", "data", "ratio", "percent"))
+        direct_map = {
+            "eps": ("eps", "每股盈餘"),
+            "roe_pct": ("roe", "權益報酬"),
+            "gross_margin_pct": ("gross_margin", "毛利率"),
+            "operating_margin_pct": ("operating_margin", "營益率", "營業利益率"),
+            "debt_ratio_pct": ("debt_ratio", "負債比"),
+            "operating_cash_flow": ("operating_cash_flow", "營業活動"),
+        }
+        for target, names in direct_map.items():
+            direct = self._to_float(self._pick(row, target, *names))
+            if direct is not None:
+                bucket[target] = direct
+        if value is None:
+            return
+        if "eps" in label or "每股盈餘" in label:
+            bucket["eps"] = value
+        elif "roe" in label or "權益報酬" in label:
+            bucket["roe_pct"] = value
+        elif "gross" in label or "毛利率" in label:
+            bucket["gross_margin_pct"] = value
+        elif "operating margin" in label or "營益率" in label or "營業利益率" in label:
+            bucket["operating_margin_pct"] = value
+        elif "debt" in label or "負債比" in label:
+            bucket["debt_ratio_pct"] = value
+        elif "operating cash" in label or "營業活動" in label:
+            bucket["operating_cash_flow"] = value
+
+    def fetch_stock_news(self, stock_id: str, start_date: str | date, end_date: str | date) -> list[dict]:
+        payload_rows = self._request_dataset(
+            dataset="TaiwanStockNews",
+            data_id=str(stock_id),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        rows: list[dict] = []
+        for row in payload_rows:
+            news_date = self._to_date(self._pick(row, "date", "publish_date", "news_date"))
+            title = str(self._pick(row, "title", "headline", "name") or "").strip()
+            if news_date is None or not title:
+                continue
+            risk_tags = self._infer_news_risk_tags(title)
+            rows.append(
+                {
+                    "date": news_date,
+                    "title": title,
+                    "source_name": str(self._pick(row, "source_name", "source", "publisher") or "").strip(),
+                    "url": str(self._pick(row, "url", "link") or "").strip(),
+                    "llm_summary": str(self._pick(row, "llm_summary", "summary", "content") or "").strip()[:500],
+                    "risk_tags": risk_tags,
+                    "source": "finmind",
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _infer_news_risk_tags(title: str) -> list[str]:
+        text = str(title or "")
+        mapping = {
+            "negative_event": ["下修", "虧損", "衰退", "裁員", "違約", "檢調", "重訊", "處分", "停工", "召回"],
+            "positive_event": ["創高", "成長", "上修", "得標", "擴產", "配息", "轉盈", "新高"],
+            "uncertainty": ["展望", "保守", "不確定", "調查", "訴訟", "匯損"],
+        }
+        tags: list[str] = []
+        for tag, keywords in mapping.items():
+            if any(keyword in text for keyword in keywords):
+                tags.append(tag)
+        return tags
 
     @staticmethod
     def _parse_bucket_bounds(label: str) -> tuple[float | None, float | None]:

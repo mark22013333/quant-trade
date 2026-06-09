@@ -165,31 +165,53 @@ class ShioajiWorkflowService:
         interval_sec = max(1.0, float(config.interval_sec))
         try:
             with self._session(simulation=True, activate_ca=False) as (api, context):
+                futures_account = self.gateway.pick_futures_account(api, context.accounts)
                 login_ok = {
                     "passed": True,
                     "message": "模擬模式登入成功",
                     "stock_account": self.gateway.serialize(self.gateway.pick_stock_account(api, context.accounts)),
-                    "futures_account": self.gateway.serialize(self.gateway.pick_futures_account(api, context.accounts)),
+                    "futures_account": self.gateway.serialize(futures_account),
                 }
-                stock_result = self._execute_stock_order(
-                    api=api,
-                    stock_code=config.stock_code,
-                    quantity=config.stock_quantity,
-                    order_price=config.stock_price,
-                    simulation=True,
-                    allow_live_order=False,
-                    live_order_nonce="",
-                )
+                try:
+                    stock_result = self._execute_stock_order(
+                        api=api,
+                        stock_code=config.stock_code,
+                        quantity=config.stock_quantity,
+                        order_price=config.stock_price,
+                        simulation=True,
+                        allow_live_order=False,
+                        live_order_nonce="",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    stock_result = {"passed": False, "message": str(exc), "error": "stock_order_failed"}
                 time.sleep(interval_sec)
-                futures_result = self._execute_futures_order(
-                    api=api,
-                    futures_code=config.futures_code,
-                    quantity=config.futures_quantity,
-                    order_price=config.futures_price,
-                    simulation=True,
-                    allow_live_order=False,
-                    live_order_nonce="",
-                )
+                if futures_account is None:
+                    futures_result = {
+                        "passed": True,
+                        "skipped": True,
+                        "message": "模擬帳戶未提供期貨帳戶，略過期貨下單測試",
+                    }
+                else:
+                    try:
+                        futures_result = self._execute_futures_order(
+                            api=api,
+                            futures_code=config.futures_code,
+                            quantity=config.futures_quantity,
+                            order_price=config.futures_price,
+                            simulation=True,
+                            allow_live_order=False,
+                            live_order_nonce="",
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        message = str(exc)
+                        if "futures account not found" in message.lower():
+                            futures_result = {
+                                "passed": True,
+                                "skipped": True,
+                                "message": "模擬帳戶未提供可用期貨帳戶，略過期貨下單測試",
+                            }
+                        else:
+                            futures_result = {"passed": False, "message": message, "error": "futures_order_failed"}
                 passed = bool(login_ok["passed"] and stock_result.get("passed") and futures_result.get("passed"))
                 failed_checks = []
                 if not login_ok["passed"]:
@@ -498,6 +520,7 @@ class ShioajiWorkflowService:
         live_order_nonce: str = "",
     ) -> Dict[str, Any]:
         contract = self.gateway.get_futures_contract(api, futures_code)
+        resolved_code = str(getattr(contract, "code", None) or futures_code)
         price = (
             float(order_price)
             if isinstance(order_price, (int, float)) and order_price > 0
@@ -514,12 +537,16 @@ class ShioajiWorkflowService:
         intent = OrderIntent(
             source="web",
             environment="simulation" if simulation else "live",
-            symbol=str(futures_code),
+            symbol=resolved_code,
             side="buy",
             price=float(price),
             quantity=int(quantity),
             order_lot="Common",
-            metadata={"workflow": "shioaji_futures_order_test", "instrument_type": "futures"},
+            metadata={
+                "workflow": "shioaji_futures_order_test",
+                "instrument_type": "futures",
+                "requested_futures_code": str(futures_code),
+            },
         )
         service = TradingExecutionService(gateway=core_gateway)
         execution = service.execute_intent(intent)
@@ -529,6 +556,7 @@ class ShioajiWorkflowService:
             "passed": passed,
             "message": "期貨下單測試通過" if passed else f"期貨下單狀態異常：{status}",
             "futures_code": execution.symbol,
+            "requested_futures_code": str(futures_code),
             "order_price": price,
             "quantity": quantity,
             "status": status,

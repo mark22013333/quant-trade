@@ -8,15 +8,19 @@ from sqlalchemy import and_, delete, distinct, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    AdvisorDecisionRecord,
     BrokerAggDaily,
     CandidateSnapshot,
     DailyRadarSnapshot,
     DailyBar,
     DispositionPeriod,
     FeatureSnapshot,
+    FinancialStatementSummary,
     HoldingSharesPerDaily,
     InstitutionalChipDaily,
     Instrument,
+    MonthlyRevenue,
+    NewsEvent,
     OrderPreviewRecord,
     ShareholdingDaily,
     PromotionGateRecord,
@@ -387,6 +391,129 @@ class TradingRepository:
         stmt = stmt.order_by(HoldingSharesPerDaily.date.desc()).limit(1)
         return self.session.execute(stmt).scalar_one_or_none()
 
+    def upsert_monthly_revenues(self, symbol: str, records: list[dict]) -> int:
+        def _find_pending(period: str) -> MonthlyRevenue | None:
+            for row in self.session.new:
+                if isinstance(row, MonthlyRevenue) and row.symbol == symbol and row.period == period:
+                    return row
+            return None
+
+        rows = 0
+        for item in records:
+            period = str(item.get("period", "") or "").strip()
+            announce_date = item.get("announce_date")
+            if not period or announce_date is None:
+                continue
+            stmt = select(MonthlyRevenue).where(MonthlyRevenue.symbol == symbol, MonthlyRevenue.period == period).limit(1)
+            existing = self.session.execute(stmt).scalar_one_or_none()
+            if existing is None:
+                existing = _find_pending(period)
+            if existing is None:
+                existing = MonthlyRevenue(symbol=symbol, period=period, announce_date=announce_date, source=item.get("source", "finmind"))
+                self.session.add(existing)
+            existing.announce_date = announce_date
+            existing.revenue = float(item.get("revenue", 0.0) or 0.0)
+            existing.revenue_yoy_pct = self._optional_float(item.get("revenue_yoy_pct"))
+            existing.revenue_mom_pct = self._optional_float(item.get("revenue_mom_pct"))
+            rows += 1
+        return rows
+
+    def get_monthly_revenues(self, symbol: str, on_or_before: date | None = None) -> list[MonthlyRevenue]:
+        stmt = select(MonthlyRevenue).where(MonthlyRevenue.symbol == symbol).order_by(MonthlyRevenue.announce_date.asc())
+        if on_or_before is not None:
+            stmt = stmt.where(MonthlyRevenue.announce_date <= on_or_before)
+        return list(self.session.execute(stmt).scalars().all())
+
+    def get_latest_monthly_revenue(self, symbol: str, on_or_before: date | None = None) -> MonthlyRevenue | None:
+        stmt = select(MonthlyRevenue).where(MonthlyRevenue.symbol == symbol)
+        if on_or_before is not None:
+            stmt = stmt.where(MonthlyRevenue.announce_date <= on_or_before)
+        stmt = stmt.order_by(MonthlyRevenue.announce_date.desc(), MonthlyRevenue.period.desc()).limit(1)
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def upsert_financial_statement_summaries(self, symbol: str, records: list[dict]) -> int:
+        def _find_pending(period: str) -> FinancialStatementSummary | None:
+            for row in self.session.new:
+                if isinstance(row, FinancialStatementSummary) and row.symbol == symbol and row.period == period:
+                    return row
+            return None
+
+        rows = 0
+        for item in records:
+            period = str(item.get("period", "") or "").strip()
+            announce_date = item.get("announce_date")
+            if not period or announce_date is None:
+                continue
+            stmt = (
+                select(FinancialStatementSummary)
+                .where(FinancialStatementSummary.symbol == symbol, FinancialStatementSummary.period == period)
+                .limit(1)
+            )
+            existing = self.session.execute(stmt).scalar_one_or_none()
+            if existing is None:
+                existing = _find_pending(period)
+            if existing is None:
+                existing = FinancialStatementSummary(
+                    symbol=symbol,
+                    period=period,
+                    announce_date=announce_date,
+                    source=item.get("source", "finmind"),
+                )
+                self.session.add(existing)
+            existing.announce_date = announce_date
+            existing.eps = self._optional_float(item.get("eps"))
+            existing.roe_pct = self._optional_float(item.get("roe_pct"))
+            existing.gross_margin_pct = self._optional_float(item.get("gross_margin_pct"))
+            existing.operating_margin_pct = self._optional_float(item.get("operating_margin_pct"))
+            existing.debt_ratio_pct = self._optional_float(item.get("debt_ratio_pct"))
+            existing.operating_cash_flow = self._optional_float(item.get("operating_cash_flow"))
+            existing.raw_json = str(item.get("raw_json", "{}") or "{}")
+            rows += 1
+        return rows
+
+    def get_latest_financial_summary(self, symbol: str, on_or_before: date | None = None) -> FinancialStatementSummary | None:
+        stmt = select(FinancialStatementSummary).where(FinancialStatementSummary.symbol == symbol)
+        if on_or_before is not None:
+            stmt = stmt.where(FinancialStatementSummary.announce_date <= on_or_before)
+        stmt = stmt.order_by(FinancialStatementSummary.announce_date.desc(), FinancialStatementSummary.period.desc()).limit(1)
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def upsert_news_events(self, symbol: str, records: list[dict]) -> int:
+        def _find_pending(news_date: date, title: str) -> NewsEvent | None:
+            for row in self.session.new:
+                if isinstance(row, NewsEvent) and row.symbol == symbol and row.news_date == news_date and row.title == title:
+                    return row
+            return None
+
+        rows = 0
+        for item in records:
+            news_date = item.get("date") or item.get("news_date")
+            title = str(item.get("title", "") or "").strip()
+            if news_date is None or not title:
+                continue
+            stmt = select(NewsEvent).where(NewsEvent.symbol == symbol, NewsEvent.news_date == news_date, NewsEvent.title == title).limit(1)
+            existing = self.session.execute(stmt).scalar_one_or_none()
+            if existing is None:
+                existing = _find_pending(news_date, title)
+            if existing is None:
+                existing = NewsEvent(symbol=symbol, news_date=news_date, title=title, source=item.get("source", "finmind"))
+                self.session.add(existing)
+            existing.source_name = str(item.get("source_name", "") or "")
+            existing.url = str(item.get("url", "") or "")
+            existing.llm_summary = str(item.get("llm_summary", "") or "")
+            existing.risk_tags_json = json.dumps(item.get("risk_tags", []), ensure_ascii=False)
+            rows += 1
+        return rows
+
+    def list_recent_news_events(self, symbol: str, on_or_before: date, limit: int = 5) -> list[NewsEvent]:
+        stmt = (
+            select(NewsEvent)
+            .where(NewsEvent.symbol == symbol, NewsEvent.news_date <= on_or_before)
+            .order_by(NewsEvent.news_date.desc(), NewsEvent.updated_at.desc())
+            .limit(max(1, int(limit)))
+        )
+        return list(self.session.execute(stmt).scalars().all())
+
     def upsert_feature_snapshots(self, symbol: str, records: list[dict]) -> int:
         rows = 0
         for item in records:
@@ -410,6 +537,11 @@ class TradingRepository:
             existing.chip_concentration_proxy = float(item.get("chip_concentration_proxy", 0.0))
             existing.chip_concentration_up3 = bool(item.get("chip_concentration_up3", False))
             existing.disposition_active = bool(item.get("disposition_active", False))
+            existing.revenue_score = float(item.get("revenue_score", 0.5) or 0.5)
+            existing.quality_score = float(item.get("quality_score", 0.5) or 0.5)
+            existing.valuation_or_growth_score = float(item.get("valuation_or_growth_score", 0.5) or 0.5)
+            existing.news_risk_score = float(item.get("news_risk_score", 0.5) or 0.5)
+            existing.fundamental_data_quality = str(item.get("fundamental_data_quality", "missing") or "missing")
             existing.entry_ready = bool(item.get("entry_ready", False))
             existing.meta_json = str(item.get("meta_json", "{}") or "{}")
             rows += 1
@@ -432,6 +564,90 @@ class TradingRepository:
         self.session.add(
             SyncJob(job_name=job_name, status=status, rows_upserted=int(rows_upserted), error_msg=error_msg or "")
         )
+
+    def add_advisor_decision_record(self, *, decision: dict, preview_id: str = "") -> None:
+        proposal = decision.get("proposal") if isinstance(decision.get("proposal"), dict) else {}
+        request = decision.get("request") if isinstance(decision.get("request"), dict) else {}
+        symbol = str((proposal or {}).get("symbol") or (request or {}).get("symbol") or "").strip().upper()
+        self.session.add(
+            AdvisorDecisionRecord(
+                decision_id=str(decision.get("decision_id", "")),
+                advisor_name=str(decision.get("advisor_name", "")),
+                advisor_version=str(decision.get("advisor_version", "")),
+                symbol=symbol,
+                action=str((proposal or {}).get("action", "reject") or "reject"),
+                status=str(decision.get("status", "created") or "created"),
+                confidence=float((proposal or {}).get("confidence", 0.0) or 0.0),
+                preview_id=str(preview_id or decision.get("preview_id", "") or ""),
+                request_json=json.dumps(request, ensure_ascii=False, default=str),
+                decision_json=json.dumps(decision, ensure_ascii=False, default=str),
+                validation_errors_json=json.dumps(list(decision.get("validation_errors") or []), ensure_ascii=False),
+                rejected_reason=str(decision.get("rejected_reason", "") or ""),
+            )
+        )
+
+    def update_advisor_decision_status(self, *, decision_id: str, status: str, rejected_reason: str = "") -> bool:
+        row = self.session.execute(
+            select(AdvisorDecisionRecord).where(AdvisorDecisionRecord.decision_id == str(decision_id)).limit(1)
+        ).scalar_one_or_none()
+        if row is None:
+            return False
+        row.status = str(status)
+        row.rejected_reason = str(rejected_reason or row.rejected_reason or "")
+        return True
+
+    def get_order_preview_record(self, preview_id: str) -> dict | None:
+        row = self.session.execute(
+            select(OrderPreviewRecord).where(OrderPreviewRecord.preview_id == str(preview_id)).limit(1)
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        return {
+            "preview_id": row.preview_id,
+            "intent_id": row.intent_id,
+            "strategy_name": row.strategy_name,
+            "strategy_version": row.strategy_version,
+            "signal_id": row.signal_id,
+            "symbol": row.symbol,
+            "side": row.side,
+            "price": float(row.price),
+            "quantity": int(row.qty),
+            "estimated_total_cost": float(row.estimated_total_cost),
+            "available_cash": float(row.available_cash) if row.available_cash is not None else None,
+            "position_before": int(row.position_before),
+            "status": row.status,
+            "reason": row.reason,
+            "preview": self._safe_json_dict(row.preview_json),
+            "decision": self._safe_json_dict(row.decision_json),
+            "intent": self._safe_json_dict(row.intent_json),
+            "expires_at": row.expires_at.isoformat() if row.expires_at else None,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+
+    def list_recent_advisor_decision_records(self, *, limit: int = 20) -> list[dict]:
+        rows = self.session.execute(
+            select(AdvisorDecisionRecord)
+            .order_by(AdvisorDecisionRecord.created_at.desc())
+            .limit(max(1, int(limit)))
+        ).scalars()
+        return [
+            {
+                "decision_id": row.decision_id,
+                "advisor_name": row.advisor_name,
+                "advisor_version": row.advisor_version,
+                "symbol": row.symbol,
+                "action": row.action,
+                "status": row.status,
+                "confidence": float(row.confidence),
+                "preview_id": row.preview_id,
+                "request": self._safe_json_dict(row.request_json),
+                "decision": self._safe_json_dict(row.decision_json),
+                "validation_errors": self._safe_json_list(row.validation_errors_json),
+                "rejected_reason": row.rejected_reason,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ]
 
     def upsert_candidate_snapshots(self, run_id: str, run_date: date, records: list[dict]) -> int:
         rows = 0
@@ -544,6 +760,13 @@ class TradingRepository:
             existing.reason_tags_json = json.dumps(item.get("reason_tags", []), ensure_ascii=False)
             existing.blocker_tags_json = json.dumps(item.get("blocker_tags", []), ensure_ascii=False)
             existing.data_quality = str(item.get("data_quality", "unknown") or "unknown")
+            existing.fundamental_data_quality = str(item.get("fundamental_data_quality", "missing") or "missing")
+            existing.revenue_score = float(item.get("revenue_score", 0.5) or 0.5)
+            existing.quality_score = float(item.get("quality_score", 0.5) or 0.5)
+            existing.valuation_or_growth_score = float(item.get("valuation_or_growth_score", 0.5) or 0.5)
+            existing.news_risk_score = float(item.get("news_risk_score", 0.5) or 0.5)
+            existing.fundamental_summary_json = json.dumps(item.get("fundamental_summary", {}), ensure_ascii=False, default=str)
+            existing.news_summary_json = json.dumps(item.get("news_summary", {}), ensure_ascii=False, default=str)
             rows += 1
         return rows
 
@@ -574,6 +797,13 @@ class TradingRepository:
                 "reason_tags": self._safe_json_list(row.reason_tags_json),
                 "blocker_tags": self._safe_json_list(row.blocker_tags_json),
                 "data_quality": row.data_quality,
+                "fundamental_data_quality": row.fundamental_data_quality,
+                "revenue_score": float(row.revenue_score),
+                "quality_score": float(row.quality_score),
+                "valuation_or_growth_score": float(row.valuation_or_growth_score),
+                "news_risk_score": float(row.news_risk_score),
+                "fundamental_summary": self._safe_json_dict(row.fundamental_summary_json),
+                "news_summary": self._safe_json_dict(row.news_summary_json),
             }
             for row in rows
         ]
@@ -667,6 +897,15 @@ class TradingRepository:
             pass
         return {}
 
+    @staticmethod
+    def _optional_float(value) -> float | None:
+        try:
+            if value is None or value == "":
+                return None
+            return float(value)
+        except Exception:
+            return None
+
     def add_trading_execution_record(self, *, intent: dict, result: dict) -> None:
         pretrade = result.get("pretrade") or {}
         row = TradingExecutionRecord(
@@ -707,6 +946,7 @@ class TradingRepository:
             position_before=int(safe_preview.get("position_before") or 0),
             status="created",
             reason="",
+            intent_json=json.dumps(safe_intent, ensure_ascii=False, default=str),
             preview_json=json.dumps(safe_preview, ensure_ascii=False, default=str),
             decision_json="{}",
             expires_at=self._parse_datetime(safe_preview.get("expires_at")) or datetime.utcnow(),

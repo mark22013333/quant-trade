@@ -158,7 +158,7 @@ class ShioajiTestRequest(BaseModel):
     stock_code: str = Field(default="2890", min_length=3, max_length=12)
     stock_quantity: int = Field(default=1, ge=1, le=10)
     stock_price: float | None = Field(default=None, gt=0)
-    futures_code: str = Field(default="TXFC0", min_length=2, max_length=12)
+    futures_code: str = Field(default="TXF", min_length=2, max_length=12)
     futures_quantity: int = Field(default=1, ge=1, le=10)
     futures_price: float | None = Field(default=None, gt=0)
     interval_sec: float = Field(default=1.1, ge=1.0, le=5.0)
@@ -175,6 +175,38 @@ class StockOrderPreviewRequest(BaseModel):
     strategy_name: str = Field(default="manual", max_length=80)
     strategy_version: str = Field(default="manual", max_length=80)
     signal_id: str = Field(default="manual", max_length=120)
+
+
+class AdvisorProposalRequest(BaseModel):
+    symbol: str = Field(default="2330", min_length=2, max_length=24)
+    trade_date: str | None = None
+    available_cash: float = Field(default=10_000, ge=0, le=50_000_000)
+    position_qty: int = Field(default=0, ge=0, le=1_000_000)
+    create_preview: bool = True
+    simulation: bool = True
+    advisor_provider: str = Field(default="stub", pattern="^(stub|codex)$")
+
+
+class AdvisorRejectRequest(BaseModel):
+    decision_id: str = Field(min_length=8, max_length=80)
+    reason: str = Field(default="manual_rejected", max_length=500)
+
+
+class AdvisorBacktestRequest(BaseModel):
+    symbol: str = Field(default="2330", min_length=2, max_length=24)
+    start_date: str
+    end_date: str
+    initial_cash: float = Field(default=10_000, ge=1_000, le=50_000_000)
+    max_days: int = Field(default=20, ge=2, le=60)
+    advisor_provider: str = Field(default="stub", pattern="^(stub|codex)$")
+
+
+class OrderApproveExecuteRequest(BaseModel):
+    preview_id: str = Field(min_length=8, max_length=80)
+    manual_confirmed: bool = False
+    promotion_gate_accepted: bool = False
+    live_order_nonce: str = Field(default="", max_length=120)
+    simulation: bool = True
 
 
 class PromotionGateRequest(BaseModel):
@@ -1226,6 +1258,178 @@ def tw_live_order_preview(req: StockOrderPreviewRequest) -> JSONResponse:
         return _safe_error_response()
 
 
+@app.post("/api/advisor/proposals")
+def advisor_proposals(req: AdvisorProposalRequest) -> JSONResponse:
+    try:
+        from app.advisor import AdvisorWorkflowService, build_advisor
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
+        trade_date = datetime.strptime(req.trade_date, "%Y-%m-%d").date() if req.trade_date else datetime.now().date()
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            service = AdvisorWorkflowService(repo=repo, advisor=build_advisor(req.advisor_provider), preview_service=ORDER_PREVIEW_SERVICE)
+            data = service.create_proposal(
+                symbol=req.symbol,
+                trade_date=trade_date,
+                available_cash=float(req.available_cash),
+                position_qty=int(req.position_qty),
+                create_preview=bool(req.create_preview),
+                environment="simulation" if req.simulation else "live",
+            )
+            session.commit()
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("advisor-proposals", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.post("/api/advisor/reject")
+def advisor_reject(req: AdvisorRejectRequest) -> JSONResponse:
+    try:
+        from app.advisor import AdvisorWorkflowService
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            data = AdvisorWorkflowService(repo=repo, preview_service=ORDER_PREVIEW_SERVICE).reject_decision(
+                decision_id=req.decision_id,
+                reason=req.reason,
+            )
+            session.commit()
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("advisor-reject", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.post("/api/advisor/backtest")
+def advisor_backtest(req: AdvisorBacktestRequest) -> JSONResponse:
+    try:
+        from app.advisor import AdvisorBacktestService, build_advisor
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
+        start_date = datetime.strptime(req.start_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(req.end_date, "%Y-%m-%d").date()
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            data = AdvisorBacktestService(repo=repo, advisor=build_advisor(req.advisor_provider)).run_isolated(
+                symbol=req.symbol,
+                start_date=start_date,
+                end_date=end_date,
+                initial_cash=float(req.initial_cash),
+                max_days=int(req.max_days),
+            )
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("advisor-backtest", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.post("/api/advisor/backtest/export")
+def advisor_backtest_export(req: AdvisorBacktestRequest) -> JSONResponse:
+    try:
+        from app.advisor import AdvisorBacktestService, build_advisor
+        from app.advisor.backtest import export_advisor_backtest_report
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+
+        start_date = datetime.strptime(req.start_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(req.end_date, "%Y-%m-%d").date()
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            data = AdvisorBacktestService(repo=repo, advisor=build_advisor(req.advisor_provider)).run_isolated(
+                symbol=req.symbol,
+                start_date=start_date,
+                end_date=end_date,
+                initial_cash=float(req.initial_cash),
+                max_days=int(req.max_days),
+            )
+        export = export_advisor_backtest_report(data, output_dir=REPORTS_DIR, symbol=req.symbol)
+        return JSONResponse({"status": "ok", "data": {"backtest": data, "export": export}})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("advisor-backtest-export", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.post("/api/tw-live/order-approve-execute")
+def tw_live_order_approve_execute(req: OrderApproveExecuteRequest) -> JSONResponse:
+    try:
+        from app.broker.shioaji_gateway import ShioajiConfig, ShioajiGateway as CoreShioajiGateway
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+        from app.execution import TradingExecutionService
+
+        if not bool(req.manual_confirmed):
+            return JSONResponse({"status": "error", "error": "manual_confirmation_required"}, status_code=400)
+        if not bool(req.promotion_gate_accepted):
+            return JSONResponse({"status": "error", "error": "promotion_gate_required"}, status_code=400)
+
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            preview = repo.get_order_preview_record(req.preview_id)
+            if preview is None:
+                return JSONResponse({"status": "error", "error": "preview_not_found"}, status_code=404)
+            requested_environment = "simulation" if req.simulation else "live"
+            preview_intent = preview.get("intent") if isinstance(preview.get("intent"), dict) else {}
+            preview_environment = str(preview_intent.get("environment") or requested_environment)
+            if preview_environment != requested_environment:
+                return JSONResponse(
+                    {
+                        "status": "error",
+                        "error": "preview_environment_mismatch",
+                        "preview_environment": preview_environment,
+                        "requested_environment": requested_environment,
+                    },
+                    status_code=400,
+                )
+            intent = OrderIntent(
+                source="web",
+                environment=requested_environment,
+                symbol=str(preview["symbol"]),
+                side=str(preview["side"]),  # type: ignore[arg-type]
+                price=float(preview["price"]),
+                quantity=int(preview["quantity"]),
+                strategy_name=str(preview["strategy_name"]),
+                signal_id=str(preview["signal_id"]),
+                metadata={
+                    "strategy_version": str(preview["strategy_version"]),
+                    "preview_id": str(req.preview_id),
+                    "manual_confirmed": bool(req.manual_confirmed),
+                    "promotion_gate_accepted": bool(req.promotion_gate_accepted),
+                },
+            )
+            gateway = CoreShioajiGateway(
+                ShioajiConfig(
+                    simulation=bool(req.simulation),
+                    allow_live_order=not bool(req.simulation),
+                    live_order_nonce=str(req.live_order_nonce or ""),
+                )
+            )
+            result = TradingExecutionService(
+                gateway=gateway,
+                repository=repo,
+                preview_service=ORDER_PREVIEW_SERVICE,
+            ).execute_intent(intent)
+            session.commit()
+        return JSONResponse({"status": "ok", "data": result.to_dict()})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("tw-live-order-approve-execute", _safe_error_text(exc))
+        return _safe_error_response()
+
+
 @app.post("/api/tw-live/promotion-gate")
 def tw_live_promotion_gate(req: PromotionGateRequest) -> JSONResponse:
     try:
@@ -1271,6 +1475,7 @@ def tw_live_audit(limit: int = 20) -> JSONResponse:
             data = {
                 "executions": repo.list_recent_trading_execution_records(limit=safe_limit),
                 "previews": repo.list_recent_order_preview_records(limit=safe_limit),
+                "advisor_decisions": repo.list_recent_advisor_decision_records(limit=safe_limit),
                 "promotion_gates": repo.list_recent_promotion_gate_records(limit=safe_limit),
                 "reconciliations": repo.list_recent_reconciliation_records(limit=safe_limit),
             }
