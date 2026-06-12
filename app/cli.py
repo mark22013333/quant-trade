@@ -427,6 +427,58 @@ def cmd_trading_audit(args) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
+def cmd_advisor_observation_add(args) -> None:
+    TradingRepository, get_session_factory, init_db = _load_db_modules()
+
+    init_db()
+    blocker_reasons = [item for item in (args.blocker_reason or []) if str(item).strip()]
+    if bool(args.failed) and not blocker_reasons:
+        blocker_reasons = ["manual_marked_failed"]
+    meta = {}
+    if args.meta_json:
+        try:
+            payload = json.loads(args.meta_json)
+            if isinstance(payload, dict):
+                meta = payload
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("--meta-json must be a JSON object") from exc
+    record = {
+        "observation_date": args.observation_date or datetime.now().date().isoformat(),
+        "symbol": args.symbol,
+        "advisor_name": args.advisor_name,
+        "advisor_version": args.advisor_version,
+        "preview_created": bool(args.preview_created),
+        "human_action": args.human_action,
+        "simulation_result": args.simulation_result,
+        "data_quality": args.data_quality,
+        "passed": not bool(args.failed),
+        "blocker_reasons": blocker_reasons,
+        "notes": args.notes,
+        "meta": meta,
+    }
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        repo = TradingRepository(session)
+        saved = repo.add_advisor_observation_record(record=record)
+        session.commit()
+    print(json.dumps(saved, ensure_ascii=False, indent=2))
+
+
+def cmd_advisor_observation_summary(args) -> None:
+    TradingRepository, get_session_factory, init_db = _load_db_modules()
+
+    init_db()
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        repo = TradingRepository(session)
+        payload = repo.summarize_advisor_observation_period(
+            advisor_name=args.advisor_name,
+            min_days=int(args.min_days),
+            limit=int(args.limit),
+        )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
 def _parse_position_map(text: str | None) -> dict[str, int]:
     output: dict[str, int] = {}
     for item in str(text or "").split(","):
@@ -649,6 +701,31 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("trading-audit", help="List recent trading audit records")
     p.add_argument("--limit", type=int, default=20)
     p.set_defaults(func=cmd_trading_audit)
+
+    p = sub.add_parser("advisor-observation-add", help="Record one stub advisor observation day")
+    p.add_argument("--observation-date", default=None, help="YYYY-MM-DD; default=today")
+    p.add_argument("--symbol", required=True, help="e.g. 2330")
+    p.add_argument("--advisor-name", default="stub")
+    p.add_argument("--advisor-version", default="")
+    p.add_argument("--preview-created", action="store_true")
+    p.add_argument("--human-action", choices=["rejected", "confirmed", "skipped"], default="skipped")
+    p.add_argument(
+        "--simulation-result",
+        choices=["submitted", "skipped", "rejected", "failed"],
+        default="skipped",
+    )
+    p.add_argument("--data-quality", default="unknown")
+    p.add_argument("--failed", action="store_true", help="mark this observation as failed")
+    p.add_argument("--blocker-reason", action="append", default=[], help="repeatable failure/blocking reason")
+    p.add_argument("--notes", default="")
+    p.add_argument("--meta-json", default="", help="optional JSON object")
+    p.set_defaults(func=cmd_advisor_observation_add)
+
+    p = sub.add_parser("advisor-observation-summary", help="Summarize stub advisor observation readiness")
+    p.add_argument("--advisor-name", default="stub")
+    p.add_argument("--min-days", type=int, default=3)
+    p.add_argument("--limit", type=int, default=100)
+    p.set_defaults(func=cmd_advisor_observation_summary)
 
     p = sub.add_parser("paper-ledger", help="Simulate T+2 paper ledger and export HTML/CSV/JSON")
     p.add_argument("--symbol", required=True, help="e.g. 2330")

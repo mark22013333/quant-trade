@@ -38,6 +38,19 @@ def test_control_panel_token_protects_api(monkeypatch):
     assert allowed.json()["status"] == "ok"
 
 
+def test_control_panel_home_exposes_browser_token_storage(monkeypatch):
+    monkeypatch.setenv("CONTROL_PANEL_TOKEN", "secret-token")
+    monkeypatch.setenv("CONTROL_PANEL_BIND_HOST", "127.0.0.1")
+    client = TestClient(app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "control-panel-token" in response.text
+    assert "quant_trade_control_panel_token" in response.text
+    assert "Authorization" in response.text
+
+
 def test_control_panel_token_protects_reports(monkeypatch, report_file):
     monkeypatch.setenv("CONTROL_PANEL_TOKEN", "secret-token")
     monkeypatch.setenv("CONTROL_PANEL_BIND_HOST", "127.0.0.1")

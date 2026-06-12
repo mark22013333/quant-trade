@@ -44,13 +44,12 @@
           </div>
         </div>
         <nav class="tab-nav" aria-label="主功能頁籤">
-          <button type="button" class="tab-btn active" data-tab-target="pipeline"><span class="nav-icon">⌁</span>AI 決策</button>
-          <button type="button" class="tab-btn" data-tab-target="strategy"><span class="nav-icon">□</span>指揮台</button>
-          <button type="button" class="tab-btn" data-tab-target="shioaji"><span class="nav-icon">≋</span>交易驗收</button>
+          <button type="button" class="tab-btn active" data-tab-target="dashboard"><span class="nav-icon">□</span>指揮台</button>
+          <button type="button" class="tab-btn" data-tab-target="pipeline"><span class="nav-icon">⌁</span>AI 決策</button>
           <button type="button" class="tab-btn" data-tab-target="account"><span class="nav-icon">◷</span>我的部位</button>
           <button type="button" class="tab-btn" data-tab-target="automation"><span class="nav-icon">↗</span>市場分析</button>
-          <button type="button" class="tab-btn" data-tab-target="reports"><span class="nav-icon">☰</span>交易紀錄</button>
-          <button type="button" class="tab-btn" data-tab-target="logs"><span class="nav-icon">≡</span>系統紀錄</button>
+          <button type="button" class="tab-btn" data-tab-target="shioaji"><span class="nav-icon">≋</span>交易驗收</button>
+          <button type="button" class="tab-btn" data-tab-target="strategy"><span class="nav-icon">☰</span>待優化</button>
           <button type="button" class="tab-btn" data-tab-target="guide"><span class="nav-icon">⚙</span>設定</button>
         </nav>
         <div class="system-block">
@@ -61,11 +60,98 @@
       </aside>
 
       <main class="workspace-main">
-    <section class="section tab-panel active" data-tab-panel="pipeline">
-      <h2 class="section-title">One-Click Candidate Wizard</h2>
-      <div class="guide-intro" style="margin-bottom:10px;">
-        兩步內完成：設定交易日與候選檔數，按下「一鍵產生候選股」。流程會自動同步資料、重建特徵、評分排序並輸出 5~10 檔可投資/波段候選。
+    <section class="section tab-panel active" data-tab-panel="dashboard">
+      <div class="page-tabs compact-tabs">
+        <button type="button" class="page-tab active" data-quick-tab="dashboard">今日狀態</button>
+        <button type="button" class="page-tab" data-quick-tab="pipeline">AI 決策</button>
+        <button type="button" class="page-tab" data-quick-tab="shioaji">交易驗收</button>
       </div>
+      <h2 class="section-title" data-kicker="COMMAND">指揮台</h2>
+      <div class="guide-intro">
+        今日只看一條主線：先確認資料與帳戶狀態，再用一鍵候選、每日雷達與觀察池決定是否進一步評估。其他研究工具先收在待優化，避免選單像夜市一樣熱鬧但難下手。
+      </div>
+
+      <div class="score-summary-grid">
+        <article class="score-summary-card">
+          <div class="score-icon">⌁</div>
+          <div>
+            <div class="score-label">最新候選</div>
+            <div class="score-value" id="dashboard-candidate-count">-</div>
+            <div class="score-meta" id="dashboard-candidate-meta">等待讀取</div>
+          </div>
+        </article>
+        <article class="score-summary-card">
+          <div class="score-icon">↗</div>
+          <div>
+            <div class="score-label">每日雷達</div>
+            <div class="score-value" id="dashboard-radar-count">-</div>
+            <div class="score-meta" id="dashboard-radar-meta">可進場 / 觀察中</div>
+          </div>
+        </article>
+        <article class="score-summary-card">
+          <div class="score-icon">◷</div>
+          <div>
+            <div class="score-label">帳戶狀態</div>
+            <div class="score-value small" id="dashboard-account-state">待檢查</div>
+            <div class="score-meta">由我的部位與交易驗收更新</div>
+          </div>
+        </article>
+        <article class="score-summary-card">
+          <div class="score-icon warm">!</div>
+          <div>
+            <div class="score-label">待處理風險</div>
+            <div class="score-value" id="dashboard-risk-count">-</div>
+            <div class="score-meta" id="dashboard-risk-meta">阻擋標籤 / 資料品質</div>
+          </div>
+        </article>
+      </div>
+
+      <div class="grid-2 dashboard-grid">
+        <div class="card">
+          <h3>今日主流程</h3>
+          <p>以「AI 決策」為日常準線，先產生候選，再看雷達與觀察池，不把研究工具混進正式判斷。</p>
+          <div class="decision-flow">
+            <button class="flow-step" data-quick-action="invest-pipeline" data-quick-tab="pipeline">
+              <span>1</span>
+              一鍵候選流程
+            </button>
+            <button class="flow-step" data-quick-action="daily-radar" data-quick-tab="pipeline">
+              <span>2</span>
+              每日雷達
+            </button>
+            <button class="flow-step" data-quick-tab="pipeline" data-ai-subtab-target="scorecard">
+              <span>3</span>
+              建議成績單
+            </button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>分流原則</h3>
+          <div class="triage-list">
+            <div><strong>日常準線</strong><span>一鍵候選、每日雷達、觀察池、建議成績單</span></div>
+            <div><strong>安全檢核</strong><span>Shioaji 模擬、正式環境檢核、Preview / Gate</span></div>
+            <div><strong>待優化</strong><span>多策略回測、訊號預覽、報表、模擬帳本、Advisor 回測</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:24px;">
+        <h3>最新決策摘要</h3>
+        <div class="table-wrap" id="dashboard-watch-summary"></div>
+      </div>
+    </section>
+
+    <section class="section tab-panel" data-tab-panel="pipeline" hidden>
+      <div class="page-tabs" role="tablist" aria-label="AI 決策分頁">
+        <button type="button" class="page-tab active" data-ai-subtab="log">決策日誌</button>
+        <button type="button" class="page-tab" data-ai-subtab="scorecard">建議成績單</button>
+        <button type="button" class="page-tab" data-ai-subtab="records">交易紀錄</button>
+      </div>
+      <h2 class="section-title" data-kicker="DECISION">AI 決策</h2>
+      <div class="guide-intro" style="margin-bottom:10px;">
+        主決策線收斂為一鍵候選、每日雷達與觀察池；其他策略研究先放到待優化。每天只看這裡，就不會被一堆「看起來都很聰明」的入口分心。
+      </div>
+      <div class="ai-subpanel active" data-ai-subpanel="log">
       <div class="grid-2">
         <div class="card">
           <h3>一鍵設定</h3>
@@ -132,7 +218,7 @@
             <button class="ghost-btn" id="refresh-latest-candidates">更新最新候選</button>
             <button class="ghost-btn" id="refresh-radar-candidates">更新每日雷達</button>
             <button class="ghost-btn" id="refresh-watch-pool">更新觀察池</button>
-            <button class="ghost-btn" id="to-advanced-mode">切到進階模式</button>
+            <button class="ghost-btn" id="to-advanced-mode">移至待優化工具</button>
           </div>
         </div>
 
@@ -161,14 +247,78 @@
         <h3>一鍵流程紀錄</h3>
         <div class="table-wrap" id="pipeline-run-history"></div>
       </div>
+      </div>
+
+      <div class="ai-subpanel" data-ai-subpanel="scorecard" hidden>
+        <div class="score-summary-grid">
+          <article class="score-summary-card">
+            <div class="score-icon">⚡</div>
+            <div>
+              <div class="score-label">今日候選</div>
+              <div class="score-value" id="scorecard-candidate-count">-</div>
+              <div class="score-meta">一鍵候選輸出</div>
+            </div>
+          </article>
+          <article class="score-summary-card">
+            <div class="score-icon">↗</div>
+            <div>
+              <div class="score-label">可進場</div>
+              <div class="score-value" id="scorecard-entry-count">-</div>
+              <div class="score-meta">每日雷達 ENTRY_READY</div>
+            </div>
+          </article>
+          <article class="score-summary-card">
+            <div class="score-icon">◷</div>
+            <div>
+              <div class="score-label">觀察中</div>
+              <div class="score-value" id="scorecard-watch-count">-</div>
+              <div class="score-meta">WATCH_WAIT_TRIGGER</div>
+            </div>
+          </article>
+          <article class="score-summary-card">
+            <div class="score-icon trophy">🏆</div>
+            <div>
+              <div class="score-label">最常見理由</div>
+              <div class="score-value small" id="scorecard-top-reason">-</div>
+              <div class="score-meta" id="scorecard-top-reason-meta">等待雷達資料</div>
+            </div>
+          </article>
+        </div>
+
+        <div class="card" style="margin-top:20px;">
+          <h3>哪種建議會賺：依理由與信心</h3>
+          <div class="table-wrap" id="scorecard-reason-table"></div>
+        </div>
+
+        <div class="card" style="margin-top:20px;">
+          <h3>逐筆建議</h3>
+          <div class="table-wrap" id="scorecard-detail-table"></div>
+        </div>
+      </div>
+
+      <div class="ai-subpanel" data-ai-subpanel="records" hidden>
+        <div class="grid-2">
+          <div class="card">
+            <h3>最近報表</h3>
+            <ul class="report-list" id="report-list"></ul>
+          </div>
+          <div class="card">
+            <h3>執行紀錄</h3>
+            <div class="log" id="log">等待指令中…</div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="section tab-panel" data-tab-panel="strategy" hidden>
-      <h2 class="section-title">Multi-Strategy Workbench</h2>
+      <h2 class="section-title" data-kicker="LAB">待優化</h2>
+      <div class="guide-intro">
+        這裡保留研究、驗證與工具類功能，但不再當成日常決策主入口。先讓它們安靜地變強，不要每天都在選單上搶麥克風。
+      </div>
       <div class="workbench-grid">
         <div class="panel">
-          <h3>回測設定</h3>
-          <p>設定標的、策略開關、權重與風控參數，執行多策略波段回測。</p>
+          <h3>策略驗證 / 實驗</h3>
+          <p>多策略回測保留為驗證工具，用來校準主決策線，不直接作為每日進出場入口。</p>
 
           <div class="form-grid two">
             <label>股票代號
@@ -299,6 +449,19 @@
           </div>
         </div>
       </div>
+      <div class="lab-section">
+        <div class="lab-section-head">
+          <h3>研究與工具箱</h3>
+          <p>從市場分析分流而來的進階工具，保留功能但降低日常操作權重。</p>
+        </div>
+        <div class="card lab-tool-card advisor-lab-card">
+          <h3>Advisor 回測 / 匯出</h3>
+          <p>此工具共用交易驗收頁的 Advisor 表單，用來研究提案表現，不作為日常主決策入口。</p>
+          <div class="inline-controls" id="advisor-lab-actions"></div>
+          <div class="result" id="advisor-result-lab"></div>
+        </div>
+        <div class="grid-3" id="lab-tools-grid"></div>
+      </div>
     </section>
 
     <section class="section tab-panel" data-tab-panel="shioaji" hidden>
@@ -371,8 +534,8 @@
           <button class="action-btn" id="advisor-create-proposal">產生 AI 提案</button>
           <button class="action-btn ghost" id="advisor-reject">婉拒提案</button>
           <button class="action-btn secondary" id="advisor-approve-execute">確認送單</button>
-          <button class="action-btn ghost" id="advisor-run-backtest">Advisor 回測</button>
-          <button class="action-btn ghost" id="advisor-export-backtest">匯出 Advisor 回測</button>
+          <button class="action-btn ghost advisor-lab-action" id="advisor-run-backtest">Advisor 回測</button>
+          <button class="action-btn ghost advisor-lab-action" id="advisor-export-backtest">匯出 Advisor 回測</button>
           <div class="result" id="advisor-result"></div>
         </div>
       </div>
@@ -605,7 +768,7 @@
           <div class="result" data-result="feature-rebuild"></div>
         </div>
 
-        <div class="card">
+        <div class="card lab-tool-card">
           <h3>訊號預覽（含籌碼/處置）</h3>
           <p>可設定排序邏輯、持倉上限、資料新鮮度與籌碼門檻模式，模擬每日實際選股順序。</p>
           <div class="form-grid three">
@@ -651,7 +814,7 @@
           <div class="result" data-result="signal-preview"></div>
         </div>
 
-        <div class="card">
+        <div class="card lab-tool-card">
           <h3>短期投資 Dashboard</h3>
           <p>重新計算短期排名，產生 Top20 HTML 與 CSV。</p>
           <div class="form-grid three">
@@ -670,7 +833,7 @@
           <div class="status" data-status="short-term"></div>
         </div>
 
-        <div class="card">
+        <div class="card lab-tool-card">
           <h3>波段分析報表</h3>
           <p>執行波段分析策略，產出 HTML 互動報表。</p>
           <div class="form-grid three">
@@ -689,7 +852,7 @@
           <div class="status" data-status="swing-report"></div>
         </div>
 
-        <div class="card">
+        <div class="card lab-tool-card">
           <h3>模擬本金帳本</h3>
           <p>用 T+2 結算 + 手續費/稅金模擬資金變化，輸出 HTML/CSV/JSON 報表。</p>
           <div class="form-grid three">
@@ -719,7 +882,7 @@
           <div class="result" data-result="paper-ledger"></div>
         </div>
 
-        <div class="card">
+        <div class="card lab-tool-card">
           <h3>Shioaji AI 協作中心</h3>
           <p>同步官方 llms 文件並生成 AI 協作中心頁面。</p>
           <label class="checkbox-line"><input type="checkbox" id="ai-force" />強制重新同步文件</label>
@@ -731,10 +894,37 @@
     </section>
 
     <section class="section tab-panel" data-tab-panel="guide" hidden>
-      <h2 class="section-title">操作指南（完整流程）</h2>
+      <h2 class="section-title" data-kicker="SETTINGS">設定</h2>
       <p class="guide-intro">
-        這份頁面是給實際操作用的流程手冊。你可以直接照下面順序執行，從資料同步、策略回測、訊號排序、資金配置，到下單前安全檢核都在同一套流程內完成。
+        這份頁面是給實際操作用的流程手冊與系統工具。日常操作請優先回到「AI 決策」，這裡只放流程說明、後端心跳與除錯紀錄。
       </p>
+
+      <div class="card settings-health-card">
+        <h3>系統狀態</h3>
+        <div class="inline-controls">
+          <span>後端心跳：<span id="heartbeat">--</span></span>
+          <button class="ghost-btn" id="refresh-log">更新後端 Log</button>
+          <button class="ghost-btn" id="post-test">測試 POST</button>
+        </div>
+        <div class="log log-secondary" id="server-log">後端 Log 尚未載入…</div>
+      </div>
+
+      <div class="card settings-health-card">
+        <h3>遠端存取 Token</h3>
+        <p>部署到 VM 並設定 `CONTROL_PANEL_TOKEN` 後，請在這裡輸入同一組 token。Token 只會存在目前瀏覽器，不會寫進專案或報表。</p>
+        <div class="form-grid two">
+          <label>Control Panel Token
+            <input type="password" id="control-panel-token" autocomplete="off" placeholder="貼上 VM 的 CONTROL_PANEL_TOKEN" />
+          </label>
+          <label>狀態
+            <input type="text" id="control-panel-token-state" value="尚未設定" readonly />
+          </label>
+        </div>
+        <div class="inline-controls">
+          <button class="action-btn secondary" id="save-control-panel-token">儲存到此瀏覽器</button>
+          <button class="ghost-btn" id="clear-control-panel-token">清除 Token</button>
+        </div>
+      </div>
 
       <div class="guide-grid">
         <article class="guide-card">
@@ -819,24 +1009,6 @@
       </div>
     </section>
 
-    <section class="section tab-panel" data-tab-panel="logs" hidden>
-      <h2 class="section-title">執行紀錄</h2>
-      <div class="inline-controls">
-        <span>後端心跳：<span id="heartbeat">--</span></span>
-        <button class="ghost-btn" id="refresh-log">更新後端 Log</button>
-        <button class="ghost-btn" id="post-test">測試 POST</button>
-      </div>
-      <div class="log" id="log">等待指令中…</div>
-      <div class="log log-secondary" id="server-log">後端 Log 尚未載入…</div>
-    </section>
-
-    <section class="section tab-panel" data-tab-panel="reports" hidden>
-      <h2 class="section-title">最近報表</h2>
-      <div class="card">
-        <ul class="report-list" id="report-list"></ul>
-      </div>
-    </section>
-
       </main>
     </div>
 
@@ -853,6 +1025,63 @@
     const TAB_STORAGE_KEY = 'quant_trade_control_tab';
     const tabButtons = Array.from(document.querySelectorAll('[data-tab-target]'));
     const tabPanels = Array.from(document.querySelectorAll('[data-tab-panel]'));
+    let latestCandidateCount = null;
+    let latestRadarItems = [];
+    const CONTROL_PANEL_TOKEN_STORAGE_KEY = 'quant_trade_control_panel_token';
+    const nativeFetch = window.fetch.bind(window);
+
+    function getStoredControlPanelToken() {
+      try {
+        return window.localStorage.getItem(CONTROL_PANEL_TOKEN_STORAGE_KEY) || '';
+      } catch (err) {
+        return '';
+      }
+    }
+
+    function setStoredControlPanelToken(value) {
+      try {
+        const token = String(value || '').trim();
+        if (token) {
+          window.localStorage.setItem(CONTROL_PANEL_TOKEN_STORAGE_KEY, token);
+        } else {
+          window.localStorage.removeItem(CONTROL_PANEL_TOKEN_STORAGE_KEY);
+        }
+      } catch (err) {
+        appendLog('瀏覽器無法儲存 token，請確認不是隱私模式或儲存權限被關閉。');
+      }
+      updateControlPanelTokenUi();
+    }
+
+    function requestNeedsControlPanelToken(resource) {
+      try {
+        const url = new URL(resource instanceof Request ? resource.url : String(resource), window.location.href);
+        return url.pathname.startsWith('/api') || url.pathname.startsWith('/reports');
+      } catch (err) {
+        const text = String(resource || '');
+        return text.startsWith('/api') || text.startsWith('/reports');
+      }
+    }
+
+    function withControlPanelToken(resource, options = {}) {
+      const token = getStoredControlPanelToken();
+      const opts = { ...options };
+      const headers = new Headers(opts.headers || (resource instanceof Request ? resource.headers : undefined));
+      if (token && requestNeedsControlPanelToken(resource)) {
+        headers.set('Authorization', `Bearer ${token}`);
+      }
+      opts.headers = headers;
+      return nativeFetch(resource, opts);
+    }
+
+    window.fetch = withControlPanelToken;
+
+    function updateControlPanelTokenUi() {
+      const input = document.getElementById('control-panel-token');
+      const state = document.getElementById('control-panel-token-state');
+      const token = getStoredControlPanelToken();
+      if (input && document.activeElement !== input) input.value = token;
+      if (state) state.value = token ? '已設定，API/報表請求會自動帶入' : '尚未設定';
+    }
 
     const ACTION_LABELS = {
       'invest-pipeline': '一鍵候選流程',
@@ -956,6 +1185,47 @@
         storedTab = '';
       }
       setActiveTab(hashTab || storedTab || tabPanels[0].dataset.tabPanel);
+    }
+
+    function setAiSubtab(name) {
+      const target = name || 'log';
+      document.querySelectorAll('[data-ai-subtab]').forEach((btn) => {
+        const active = btn.dataset.aiSubtab === target;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      document.querySelectorAll('[data-ai-subpanel]').forEach((panel) => {
+        const active = panel.dataset.aiSubpanel === target;
+        panel.classList.toggle('active', active);
+        panel.hidden = !active;
+      });
+    }
+
+    function initAiSubtabs() {
+      document.querySelectorAll('[data-ai-subtab]').forEach((btn) => {
+        btn.addEventListener('click', () => setAiSubtab(btn.dataset.aiSubtab));
+      });
+      setAiSubtab('log');
+    }
+
+    function moveLabTools() {
+      const target = document.getElementById('lab-tools-grid');
+      if (!target) return;
+      document.querySelectorAll('.lab-tool-card').forEach((card) => {
+        if (card.classList.contains('advisor-lab-card')) return;
+        target.appendChild(card);
+      });
+      const advisorTarget = document.getElementById('advisor-lab-actions');
+      if (advisorTarget) {
+        document.querySelectorAll('.advisor-lab-action').forEach((btn) => {
+          advisorTarget.appendChild(btn);
+        });
+      }
+    }
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
     }
 
     function isFilePreviewMode() {
@@ -1213,7 +1483,7 @@
       const entries = Object.entries(urls).filter(([, url]) => typeof url === 'string' && url.length > 0);
       if (entries.length === 0) return '';
       const html = entries
-        .map(([label, url]) => `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a></li>`)
+        .map(([label, url]) => `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener" data-auth-report-link="true">${escapeHtml(label)}</a></li>`)
         .join('');
       return `<div class="result-title">匯出檔案</div><ul class="result-list">${html}</ul>`;
     }
@@ -1576,7 +1846,10 @@
         const res = await fetch(`/api/candidates/latest?count=${maxCount}`);
         const payload = await res.json();
         if (payload.status !== 'ok') throw new Error(payload.error || '讀取失敗');
-        renderPipelineCandidates(payload.data || []);
+        const rows = payload.data || [];
+        latestCandidateCount = rows.length;
+        renderPipelineCandidates(rows);
+        renderScorecard(latestRadarItems, latestCandidateCount);
       } catch (err) {
         const wrap = document.getElementById('pipeline-candidate-cards');
         if (wrap) {
@@ -1696,13 +1969,95 @@
       `;
     }
 
+    function renderDashboardWatchSummary(rows) {
+      const mapped = (Array.isArray(rows) ? rows : []).slice(0, 8).map((item) => {
+        const actionMeta = radarActionMeta(item.action_label);
+        const riskLight = radarRiskLightMeta(item);
+        return {
+          symbol: item.symbol || '-',
+          name: item.name || '-',
+          status: radarStatusLabel(item.status),
+          action: actionMeta.text,
+          risk_light: riskLight.text,
+          entry_score: typeof item.entry_score === 'number' ? item.entry_score.toFixed(2) : '-',
+          blockers: Array.isArray(item.blocker_tags) && item.blocker_tags.length > 0
+            ? item.blocker_tags.map(tag => radarBlockerMeta(tag).text).join('｜')
+            : '-',
+        };
+      });
+      renderTable('dashboard-watch-summary', mapped, [
+        'symbol', 'name', 'status', 'action', 'risk_light', 'entry_score', 'blockers'
+      ]);
+    }
+
+    function summarizeReasonTags(items) {
+      const counts = {};
+      (Array.isArray(items) ? items : []).forEach((item) => {
+        (Array.isArray(item.reason_tags) ? item.reason_tags : []).forEach((tag) => {
+          const label = radarReasonLabel(tag);
+          counts[label] = (counts[label] || 0) + 1;
+        });
+      });
+      return Object.entries(counts)
+        .sort((a, b) => Number(b[1]) - Number(a[1]))
+        .map(([reason, count]) => ({ reason, count }));
+    }
+
+    function renderScorecard(items, candidateCount = null) {
+      const rows = Array.isArray(items) ? items : [];
+      const entryCount = rows.filter(item => item.action_label === 'ENTRY_READY').length;
+      const watchCount = rows.filter(item => item.action_label === 'WATCH_WAIT_TRIGGER').length;
+      const blockerCount = rows.reduce((sum, item) => sum + (Array.isArray(item.blocker_tags) ? item.blocker_tags.length : 0), 0);
+      const reasonRows = summarizeReasonTags(rows);
+      const topReason = reasonRows[0];
+
+      if (candidateCount !== null) {
+        setText('scorecard-candidate-count', String(candidateCount));
+        setText('dashboard-candidate-count', String(candidateCount));
+        setText('dashboard-candidate-meta', '最新一鍵候選輸出');
+      }
+      setText('scorecard-entry-count', String(entryCount));
+      setText('scorecard-watch-count', String(watchCount));
+      setText('scorecard-top-reason', topReason ? topReason.reason : '-');
+      setText('scorecard-top-reason-meta', topReason ? `${topReason.count} 筆建議出現` : '等待雷達資料');
+      setText('dashboard-radar-count', `${entryCount} / ${watchCount}`);
+      setText('dashboard-radar-meta', '可進場 / 觀察中');
+      setText('dashboard-risk-count', String(blockerCount));
+      setText('dashboard-risk-meta', blockerCount > 0 ? '有阻擋標籤，請先確認' : '目前無阻擋標籤');
+
+      renderTable('scorecard-reason-table', reasonRows.map(row => ({
+        reason: row.reason,
+        count: row.count,
+        confidence: row.count >= 3 ? '高' : row.count >= 2 ? '中' : '低',
+        note: '先作為分類觀察，待累積交易結果後再評估勝率',
+      })), ['reason', 'count', 'confidence', 'note']);
+
+      renderTable('scorecard-detail-table', rows.map((item, idx) => {
+        const actionMeta = radarActionMeta(item.action_label);
+        return {
+          rank: item.rank || idx + 1,
+          symbol: item.symbol || '-',
+          name: item.name || '-',
+          action: actionMeta.text,
+          entry_score: typeof item.entry_score === 'number' ? item.entry_score.toFixed(2) : '-',
+          risk_score: typeof item.risk_score === 'number' ? formatPct(item.risk_score, 1) : '-',
+          data_quality: radarDataQualityLabel(item.data_quality),
+          reasons: (Array.isArray(item.reason_tags) ? item.reason_tags : []).slice(0, 3).map(radarReasonLabel).join('｜') || '-',
+          blockers: (Array.isArray(item.blocker_tags) ? item.blocker_tags : []).slice(0, 3).map(tag => radarBlockerMeta(tag).text).join('｜') || '-',
+        };
+      }), ['rank', 'symbol', 'name', 'action', 'entry_score', 'risk_score', 'data_quality', 'reasons', 'blockers']);
+    }
+
     async function refreshDailyRadar(count = 20) {
       const maxCount = Math.max(1, Math.min(50, Number(count || 20)));
       try {
         const res = await fetch(`/api/radar/latest?count=${maxCount}`);
         const payload = await res.json();
         if (payload.status !== 'ok') throw new Error(payload.error || '讀取失敗');
-        renderDailyRadarCandidates(payload.data || []);
+        const rows = payload.data || [];
+        latestRadarItems = rows;
+        renderDailyRadarCandidates(rows);
+        renderScorecard(latestRadarItems, latestCandidateCount);
       } catch (err) {
         const wrap = document.getElementById('radar-candidate-cards');
         if (wrap) {
@@ -1717,7 +2072,9 @@
         const res = await fetch(`/api/watch-pool?limit=${maxRows}&active_only=true`);
         const payload = await res.json();
         if (payload.status !== 'ok') throw new Error(payload.error || '讀取失敗');
-        renderWatchPool(payload.data || []);
+        const rows = payload.data || [];
+        renderWatchPool(rows);
+        renderDashboardWatchSummary(rows);
       } catch (err) {
         const wrap = document.getElementById('watch-pool-table');
         if (wrap) {
@@ -1746,6 +2103,7 @@
       }
 
       if (action === 'account-diagnose') {
+        setText('dashboard-account-state', result?.production_permission === true ? '正式可查' : '需確認');
         const tipEl = document.getElementById('diagnose-tip');
         if (!tipEl || !result) return;
         const prod = result.production_permission;
@@ -1762,6 +2120,7 @@
       }
 
       if (action === 'shioaji-verify-production') {
+        setText('dashboard-account-state', result?.passed === true ? '驗收通過' : '待驗收');
         const switchTip = document.getElementById('switch-tip');
         if (!switchTip || !result) return;
         if (result.passed === true) {
@@ -1939,6 +2298,7 @@
         link.href = item.url;
         link.target = '_blank';
         link.rel = 'noopener';
+        link.dataset.authReportLink = 'true';
         link.textContent = item.name;
         const meta = document.createElement('span');
         meta.textContent = item.updated;
@@ -1946,6 +2306,15 @@
         li.appendChild(meta);
         reportList.appendChild(li);
       });
+    }
+
+    async function openAuthenticatedReport(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`報表讀取失敗 (${res.status})`);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      window.open(objectUrl, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
     }
 
     async function refreshDataHealth() {
@@ -2038,8 +2407,12 @@
 
     function renderInlineJson(targetId, payload) {
       const el = document.getElementById(targetId);
-      if (!el) return;
-      el.textContent = JSON.stringify(payload, null, 2);
+      const text = JSON.stringify(payload, null, 2);
+      if (el) el.textContent = text;
+      if (targetId === 'advisor-result') {
+        const labEl = document.getElementById('advisor-result-lab');
+        if (labEl) labEl.textContent = text;
+      }
     }
 
     let latestAdvisorDecisionId = '';
@@ -2391,6 +2764,7 @@
       btn.addEventListener('click', () => {
         const tab = btn.dataset.quickTab;
         if (tab) setActiveTab(tab);
+        if (btn.dataset.aiSubtabTarget) setAiSubtab(btn.dataset.aiSubtabTarget);
         runAction(btn.dataset.quickAction);
       });
     });
@@ -2399,6 +2773,7 @@
       btn.addEventListener('click', () => {
         const tab = btn.dataset.quickTab;
         if (tab) setActiveTab(tab);
+        if (btn.dataset.aiSubtabTarget) setAiSubtab(btn.dataset.aiSubtabTarget);
       });
     });
 
@@ -2428,6 +2803,26 @@
     });
     document.getElementById('refresh-watch-pool').addEventListener('click', () => refreshWatchPool(50));
     document.getElementById('to-advanced-mode').addEventListener('click', () => setActiveTab('strategy'));
+    document.getElementById('save-control-panel-token').addEventListener('click', () => {
+      const input = document.getElementById('control-panel-token');
+      setStoredControlPanelToken(input?.value || '');
+      appendLog('Control Panel Token 已更新到目前瀏覽器。');
+      refreshHeartbeat();
+    });
+    document.getElementById('clear-control-panel-token').addEventListener('click', () => {
+      setStoredControlPanelToken('');
+      appendLog('Control Panel Token 已從目前瀏覽器清除。');
+    });
+    document.addEventListener('click', async (event) => {
+      const link = event.target?.closest?.('a[data-auth-report-link="true"]');
+      if (!link) return;
+      event.preventDefault();
+      try {
+        await openAuthenticatedReport(link.getAttribute('href'));
+      } catch (err) {
+        appendLog(`報表開啟失敗：${err?.message || err}`);
+      }
+    });
 
     document.getElementById('post-test').addEventListener('click', async () => {
       try {
@@ -2467,7 +2862,10 @@
       if (pipelineDateEl && !pipelineDateEl.value) pipelineDateEl.value = fmt(today);
     })();
 
+    moveLabTools();
+    updateControlPanelTokenUi();
     initTabs();
+    initAiSubtabs();
     updatePipelineTimeline(0, 'idle', null);
     renderStrategyWorkbench({});
     if (isFilePreviewMode()) {

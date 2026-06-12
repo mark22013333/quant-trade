@@ -1,0 +1,17 @@
+[Unit]
+Description=Quant-Trade FastAPI Control Panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/quant-trade
+EnvironmentFile=/opt/quant-trade/.env
+ExecStart=/opt/quant-trade/venv/bin/python run_web.py --host 127.0.0.1 --port 8766
+Restart=on-failure
+RestartSec=5
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

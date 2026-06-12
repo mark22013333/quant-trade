@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     AdvisorDecisionRecord,
+    AdvisorObservationRecord,
     BrokerAggDaily,
     CandidateSnapshot,
     DailyRadarSnapshot,
@@ -1005,6 +1006,100 @@ class TradingRepository:
         )
         self.session.add(row)
 
+    def add_advisor_observation_record(self, *, record: dict) -> dict:
+        safe_record = redact_sensitive(dict(record or {}))
+        observation_date = self._parse_date(safe_record.get("observation_date")) or datetime.utcnow().date()
+        blockers = [str(item) for item in safe_record.get("blocker_reasons") or [] if str(item).strip()]
+        row = AdvisorObservationRecord(
+            observation_date=observation_date,
+            symbol=str(safe_record.get("symbol", "") or "").strip().upper(),
+            advisor_name=str(safe_record.get("advisor_name", "stub") or "stub"),
+            advisor_version=str(safe_record.get("advisor_version", "") or ""),
+            preview_created=bool(safe_record.get("preview_created")),
+            human_action=str(safe_record.get("human_action", "skipped") or "skipped"),
+            simulation_result=str(safe_record.get("simulation_result", "skipped") or "skipped"),
+            data_quality=str(safe_record.get("data_quality", "unknown") or "unknown"),
+            passed=bool(safe_record.get("passed")),
+            blocker_reasons_json=json.dumps(blockers, ensure_ascii=False),
+            notes=str(safe_record.get("notes", "") or ""),
+            meta_json=json.dumps(dict(safe_record.get("meta") or {}), ensure_ascii=False, default=str),
+        )
+        self.session.add(row)
+        self.session.flush()
+        return self._advisor_observation_to_dict(row)
+
+    def list_recent_advisor_observation_records(
+        self,
+        *,
+        limit: int = 20,
+        advisor_name: str | None = None,
+    ) -> list[dict]:
+        stmt = select(AdvisorObservationRecord).order_by(
+            AdvisorObservationRecord.observation_date.desc(),
+            AdvisorObservationRecord.created_at.desc(),
+        )
+        if advisor_name:
+            stmt = stmt.where(AdvisorObservationRecord.advisor_name == str(advisor_name))
+        stmt = stmt.limit(max(1, int(limit)))
+        rows = self.session.execute(stmt).scalars()
+        return [self._advisor_observation_to_dict(row) for row in rows]
+
+    def summarize_advisor_observation_period(
+        self,
+        *,
+        advisor_name: str = "stub",
+        min_days: int = 3,
+        limit: int = 100,
+    ) -> dict:
+        rows = self.list_recent_advisor_observation_records(
+            limit=max(int(limit), int(min_days), 1),
+            advisor_name=advisor_name,
+        )
+        observed_dates = sorted({str(row["observation_date"]) for row in rows if row.get("observation_date")})
+        failed_rows = [row for row in rows if not row.get("passed")]
+        blocker_counts: dict[str, int] = {}
+        for row in failed_rows:
+            reasons = row.get("blocker_reasons") or []
+            if not reasons:
+                reasons = ["observation_not_passed"]
+            for reason in reasons:
+                key = str(reason)
+                blocker_counts[key] = blocker_counts.get(key, 0) + 1
+        blocking_reasons = sorted(blocker_counts)
+        if len(observed_dates) < int(min_days):
+            blocking_reasons.insert(0, "observation_days_insufficient")
+        ready = not blocking_reasons and len(observed_dates) >= int(min_days)
+        return {
+            "advisor_name": advisor_name,
+            "min_days": int(min_days),
+            "observed_days": len(observed_dates),
+            "observed_dates": observed_dates,
+            "total_records": len(rows),
+            "passed_records": len([row for row in rows if row.get("passed")]),
+            "failed_records": len(failed_rows),
+            "ready_for_next_phase": ready,
+            "blocking_reasons": blocking_reasons,
+            "recent_records": rows[: min(10, len(rows))],
+        }
+
+    def _advisor_observation_to_dict(self, row: AdvisorObservationRecord) -> dict:
+        return {
+            "id": int(row.id),
+            "observation_date": row.observation_date.isoformat() if row.observation_date else None,
+            "symbol": row.symbol,
+            "advisor_name": row.advisor_name,
+            "advisor_version": row.advisor_version,
+            "preview_created": bool(row.preview_created),
+            "human_action": row.human_action,
+            "simulation_result": row.simulation_result,
+            "data_quality": row.data_quality,
+            "passed": bool(row.passed),
+            "blocker_reasons": self._safe_json_list(row.blocker_reasons_json),
+            "notes": row.notes,
+            "meta": self._safe_json_dict(row.meta_json),
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+
     def list_recent_trading_execution_records(self, *, limit: int = 20) -> list[dict]:
         rows = self.session.execute(
             select(TradingExecutionRecord)
@@ -1096,5 +1191,18 @@ class TradingRepository:
             return None
         try:
             return datetime.fromisoformat(str(value))
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _parse_date(value: object) -> date | None:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if not value:
+            return None
+        try:
+            return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
         except ValueError:
             return None

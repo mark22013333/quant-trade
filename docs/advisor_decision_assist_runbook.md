@@ -23,6 +23,38 @@
 8. 若不採納，按「婉拒提案」。這只會更新 decision record，不會呼叫 Shioaji。
 9. 若要測試送單，勾選「我確認要送出預覽委託」，再按「確認送單」。控制台會帶入 `manual_confirmed=true` 與 `promotion_gate_accepted=true`，並且只依 preview 還原委託內容。
 10. 到「交易紀錄」或 audit API 檢查 advisor decision、order preview 與 execution record 是否可追蹤。
+11. 將當天結果寫入 stub 觀察紀錄：
+
+```bash
+.venv/bin/python -m app.cli advisor-observation-add \
+  --observation-date 2026-06-12 \
+  --symbol 2330 \
+  --advisor-name stub \
+  --preview-created \
+  --human-action rejected \
+  --simulation-result skipped \
+  --data-quality fresh \
+  --notes "stub proposal reviewed; no execution needed"
+```
+
+若當天流程有缺資料、preview 失敗或模擬送單失敗，請加上 `--failed` 與一個或多個 `--blocker-reason`：
+
+```bash
+.venv/bin/python -m app.cli advisor-observation-add \
+  --observation-date 2026-06-12 \
+  --symbol 2454 \
+  --failed \
+  --blocker-reason data_quality_missing \
+  --data-quality missing
+```
+
+檢查是否滿足 3 到 5 個交易日觀察期：
+
+```bash
+.venv/bin/python -m app.cli advisor-observation-summary --advisor-name stub --min-days 3
+```
+
+只有 `ready_for_next_phase=true` 且 `blocking_reasons=[]` 時，才進入下一階段評估。
 
 ## Advisor 回測流程
 

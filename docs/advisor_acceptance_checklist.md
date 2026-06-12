@@ -10,6 +10,25 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | YYYY-MM-DD | 2330 | stub | yes/no | rejected/confirmed | submitted/skipped/rejected | fresh/missing/unknown | |
 
+每日紀錄請同步寫入資料庫，避免觀察期只留在文件裡：
+
+```bash
+.venv/bin/python -m app.cli advisor-observation-add \
+  --observation-date YYYY-MM-DD \
+  --symbol 2330 \
+  --advisor-name stub \
+  --preview-created \
+  --human-action rejected \
+  --simulation-result skipped \
+  --data-quality fresh
+```
+
+觀察期摘要：
+
+```bash
+.venv/bin/python -m app.cli advisor-observation-summary --advisor-name stub --min-days 3
+```
+
 ## 每日驗收步驟
 
 1. 啟動控制台：
@@ -38,6 +57,7 @@
 - 永豐模擬帳戶不支援餘額時，台股測試會標示 simulation cash fallback。
 - 沒有期貨帳戶時，期貨測試會 skipped，不會讓台股驗證失敗。
 - 完整測試維持全綠。
+- `advisor-observation-summary` 回傳 `ready_for_next_phase=true`，且 `blocking_reasons=[]`。
 
 ## 上線前不得放寬的條件
 

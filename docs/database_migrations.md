@@ -4,7 +4,7 @@ Quant-Trade now has an Alembic scaffold for schema changes.
 
 ## Current Baseline
 
-- Alembic head revision: `20260605_0001`
+- Alembic head revision: `20260612_0007`
 - Initial revision: `alembic/versions/20260605_0001_initial_schema.py`
 - Metadata source: `app.db.models.Base.metadata`
 
@@ -25,6 +25,13 @@ Check migration heads:
 
 ```bash
 alembic heads
+```
+
+If your virtualenv does not expose the `alembic` executable yet, install the
+dev dependencies first:
+
+```bash
+pip install -r requirements-dev.txt
 ```
 
 Apply migrations using the configured `DATABASE_URL`:

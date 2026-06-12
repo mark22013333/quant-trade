@@ -189,6 +189,24 @@ class AdvisorDecisionRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class AdvisorObservationRecord(Base):
+    __tablename__ = "advisor_observation_records"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    observation_date: Mapped[date] = mapped_column(Date, index=True)
+    symbol: Mapped[str] = mapped_column(String(20), default="", index=True)
+    advisor_name: Mapped[str] = mapped_column(String(80), default="stub", index=True)
+    advisor_version: Mapped[str] = mapped_column(String(80), default="")
+    preview_created: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    human_action: Mapped[str] = mapped_column(String(24), default="skipped", index=True)
+    simulation_result: Mapped[str] = mapped_column(String(32), default="skipped", index=True)
+    data_quality: Mapped[str] = mapped_column(String(24), default="unknown", index=True)
+    passed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    blocker_reasons_json: Mapped[str] = mapped_column(Text, default="[]")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    meta_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class FeatureSnapshot(Base):
     __tablename__ = "feature_snapshots"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

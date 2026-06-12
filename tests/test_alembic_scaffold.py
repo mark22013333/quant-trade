@@ -14,10 +14,13 @@ HEAD_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260608_0003_trad
 MARKET_FUNDAMENTALS_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260608_0004_market_fundamentals_news.py"
 TRADING_ADVISOR_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260609_0005_trading_advisor.py"
 ORDER_PREVIEW_INTENT_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260609_0006_order_preview_intent_json.py"
+ADVISOR_OBSERVATION_REVISION_PATH = (
+    PROJECT_ROOT / "alembic" / "versions" / "20260612_0007_advisor_observation_records.py"
+)
 
 
 def _revision_assignments() -> dict[str, object]:
-    tree = ast.parse(ORDER_PREVIEW_INTENT_REVISION_PATH.read_text(encoding="utf-8"))
+    tree = ast.parse(ADVISOR_OBSERVATION_REVISION_PATH.read_text(encoding="utf-8"))
     values: dict[str, object] = {}
     for node in tree.body:
         if not isinstance(node, ast.Assign):
@@ -36,7 +39,7 @@ def test_alembic_scaffold_points_to_current_schema_head():
     values = _revision_assignments()
 
     assert values["revision"] == ALEMBIC_HEAD_REVISION
-    assert values["down_revision"] == "20260609_0005"
+    assert values["down_revision"] == "20260609_0006"
 
 
 def test_initial_revision_uses_application_metadata():
@@ -93,3 +96,11 @@ def test_order_preview_intent_revision_is_checkfirst_safe():
     assert "order_preview_records" in text
     assert "inspector.has_table" in text
     assert "intent_json" in Base.metadata.tables["order_preview_records"].columns
+
+
+def test_advisor_observation_revision_is_checkfirst_safe():
+    text = ADVISOR_OBSERVATION_REVISION_PATH.read_text(encoding="utf-8")
+
+    assert "AdvisorObservationRecord" in text
+    assert "checkfirst=True" in text
+    assert "advisor_observation_records" in Base.metadata.tables

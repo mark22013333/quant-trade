@@ -219,6 +219,13 @@ Advisor 回測規則：
 - `docs/advisor_decision_assist_runbook.md`
 - `docs/advisor_acceptance_checklist.md`
 
+stub 觀察期可用 CLI 落庫追蹤：
+
+```bash
+.venv/bin/python -m app.cli advisor-observation-add --symbol 2330 --advisor-name stub --preview-created --human-action rejected --simulation-result skipped --data-quality fresh
+.venv/bin/python -m app.cli advisor-observation-summary --advisor-name stub --min-days 3
+```
+
 ### 8) Shioaji 模擬測試與正式切換（Web）
 
 控制台提供五個交易測試動作：
@@ -298,6 +305,8 @@ pytest -q
 建議 `.env` 格式如下（本機自行建立，勿上傳）：
 
 ```
+CONTROL_PANEL_TOKEN=your_long_random_control_panel_token
+DATABASE_URL=sqlite:///data/quant_trade.db
 SHIOAJI_APIKEY=your_key
 SHIOAJI_SECRET=your_secret
 SHIOAJI_CA_PATH=/path/to/ca
@@ -354,6 +363,20 @@ pip install -r requirements.txt
 - 每次動作的進度、耗時秒數
 - 查詢結果 JSON（若 API 回傳結構不同，會保留 raw 資料）
 - 執行紀錄也會寫入 `reports/control_panel.log`
+
+## VM 部署
+
+第一階段建議先部署現有 FastAPI 控制台，不先改 React。部署架構：
+
+- Nginx 對外提供 HTTPS
+- FastAPI 只綁 `127.0.0.1:8766`
+- `/api/*` 與 `/reports/*` 使用 `CONTROL_PANEL_TOKEN` 保護
+- 瀏覽器在控制台「設定」頁輸入 token 後，API 與報表請求會自動帶入
+
+完整步驟請看：
+
+- `docs/vm_deployment.md`
+
 ## 依賴清單
 
 - pandas, numpy
