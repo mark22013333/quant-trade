@@ -1030,6 +1030,23 @@
     const CONTROL_PANEL_TOKEN_STORAGE_KEY = 'quant_trade_control_panel_token';
     const nativeFetch = window.fetch.bind(window);
 
+    function controlPanelBasePath() {
+      const marker = '/quant-trade/';
+      const path = window.location.pathname || '/';
+      const idx = path.indexOf(marker);
+      if (idx >= 0) return path.slice(0, idx + marker.length - 1);
+      return '';
+    }
+
+    function withControlPanelBasePath(resource) {
+      if (resource instanceof Request) return resource;
+      const text = String(resource || '');
+      if (text.startsWith('/api') || text.startsWith('/reports')) {
+        return `${controlPanelBasePath()}${text}`;
+      }
+      return resource;
+    }
+
     function getStoredControlPanelToken() {
       try {
         return window.localStorage.getItem(CONTROL_PANEL_TOKEN_STORAGE_KEY) || '';
@@ -1070,7 +1087,7 @@
         headers.set('Authorization', `Bearer ${token}`);
       }
       opts.headers = headers;
-      return nativeFetch(resource, opts);
+      return nativeFetch(withControlPanelBasePath(resource), opts);
     }
 
     window.fetch = withControlPanelToken;

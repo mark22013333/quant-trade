@@ -371,6 +371,7 @@ pip install -r requirements.txt
 - Nginx 對外提供 HTTPS
 - FastAPI 只綁 `127.0.0.1:8766`
 - `/api/*` 與 `/reports/*` 使用 `CONTROL_PANEL_TOKEN` 保護
+- 既有 `cheng.tplinkdns.com` 根站台不動，Quant-Trade 建議掛在 `/quant-trade/`
 - 瀏覽器在控制台「設定」頁輸入 token 後，API 與報表請求會自動帶入
 
 完整步驟請看：

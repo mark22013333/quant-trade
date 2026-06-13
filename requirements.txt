@@ -6,7 +6,6 @@ seaborn
 plotly
 tqdm
 python-dotenv
-TA-Lib
 pyarrow
 pytest
 requests

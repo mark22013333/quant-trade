@@ -2,6 +2,12 @@
 
 本手冊用於第一階段部署：保留現有 FastAPI 控制台，不建立 React 前端。Nginx 對外提供 HTTPS，FastAPI 只綁 `127.0.0.1:8766`。
 
+目前 `cheng.tplinkdns.com` 已有既有站台，因此 Quant-Trade 掛在子路徑：
+
+```text
+https://cheng.tplinkdns.com/quant-trade/
+```
+
 ## 前置安全檢查
 
 - 不要把密碼、API key、`CONTROL_PANEL_TOKEN` 寫進 Git、Nginx 或 systemd unit。
@@ -30,6 +36,12 @@ ss -ltnp
 
 ## 安裝系統套件
 
+CentOS Stream 8 / RHEL-like：
+
+```bash
+dnf install -y git nginx python39 python39-pip python39-devel gcc gcc-c++ make
+```
+
 Ubuntu/Debian：
 
 ```bash
@@ -43,10 +55,16 @@ apt install -y python3-venv python3-pip git nginx certbot python3-certbot-nginx
 mkdir -p /opt
 git clone https://github.com/mark22013333/quant-trade.git /opt/quant-trade
 cd /opt/quant-trade
-python3 -m venv venv
+python3.9 -m venv venv
 venv/bin/python -m pip install --upgrade pip
 venv/bin/python -m pip install -r requirements.txt
 mkdir -p data reports .cache
+```
+
+`TA-Lib` 是可選套件。若 VM 已安裝 TA-Lib 系統函式庫，再另外安裝：
+
+```bash
+venv/bin/python -m pip install TA-Lib
 ```
 
 建立 `/opt/quant-trade/.env`，權限設為 `600`：
@@ -96,27 +114,36 @@ curl http://127.0.0.1:8766/api/ping -H "Authorization: Bearer <CONTROL_PANEL_TOK
 
 ## Nginx + HTTPS
 
+這台 VM 目前使用 `/etc/nginx/conf.d/proxy-ssl.conf` 服務 `cheng.tplinkdns.com`，且根路徑已提供既有站台。請把 `/opt/quant-trade/deploy/nginx/quant-trade-location.conf` 內的兩個 `location` block 插入到既有 `server_name cheng.tplinkdns.com` 的 HTTPS server 內，並放在既有 `location /` 之前。
+
+如果 HTTP server 也直接提供內容，請在 HTTP server 的既有 `location /` 之前加入同樣 block，或只保留既有 HTTP→HTTPS redirect。
+
+套用後檢查：
+
 ```bash
-cp /opt/quant-trade/deploy/nginx/quant-trade.conf /etc/nginx/sites-available/quant-trade
-ln -sfn /etc/nginx/sites-available/quant-trade /etc/nginx/sites-enabled/quant-trade
 nginx -t
 systemctl reload nginx
+```
+
+如果憑證尚未建立，再執行：
+
+```bash
 certbot --nginx -d cheng.tplinkdns.com
 ```
 
 驗證：
 
 ```bash
-curl -I https://cheng.tplinkdns.com
-curl https://cheng.tplinkdns.com/api/ping
-curl https://cheng.tplinkdns.com/api/ping -H "Authorization: Bearer <CONTROL_PANEL_TOKEN>"
+curl -I https://cheng.tplinkdns.com/quant-trade/
+curl https://cheng.tplinkdns.com/quant-trade/api/ping
+curl https://cheng.tplinkdns.com/quant-trade/api/ping -H "Authorization: Bearer <CONTROL_PANEL_TOKEN>"
 ```
 
 預期：
 
 - 未帶 token 的 `/api/ping` 回 `401`。
 - 帶 token 的 `/api/ping` 回 `{"status":"ok",...}`。
-- 瀏覽器打開首頁後，到「設定」輸入 `CONTROL_PANEL_TOKEN`，之後 API 與報表連結會自動帶入 token。
+- 瀏覽器打開 `https://cheng.tplinkdns.com/quant-trade/` 後，到「設定」輸入 `CONTROL_PANEL_TOKEN`，之後 API 與報表連結會自動帶入 token。
 
 ## 更新部署
 
