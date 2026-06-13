@@ -1,6 +1,6 @@
 # Quant-Trade VM 部署手冊
 
-本手冊用於第一階段部署：保留現有 FastAPI 控制台，不建立 React 前端。Nginx 對外提供 HTTPS，FastAPI 只綁 `127.0.0.1:8766`。
+本手冊用於第一階段部署：保留現有 FastAPI 控制台，不建立 React 前端。Nginx 對外提供 HTTPS，FastAPI 只綁 `127.0.0.1:8766`。交易控制台入口由 Nginx IP 白名單與 Basic Auth 保護，API 與報表再由 `CONTROL_PANEL_TOKEN` 保護。
 
 目前 `cheng.tplinkdns.com` 已有既有站台，因此 Quant-Trade 掛在子路徑：
 
@@ -11,6 +11,7 @@ https://cheng.tplinkdns.com/quant-trade/
 ## 前置安全檢查
 
 - 不要把密碼、API key、`CONTROL_PANEL_TOKEN` 寫進 Git、Nginx 或 systemd unit。
+- 不要把 Basic Auth 帳密寫進 Git；帳密放在 VM 的 `/etc/nginx/.htpasswd`，備份資訊放 root-only 檔案。
 - 使用 SSH key 登入 VM；若曾貼出密碼，請先輪替。
 - 第一階段不要設定 `SHIOAJI_ENABLE_LIVE_ORDERS=1`。
 - 部署前本機先跑：
@@ -114,9 +115,11 @@ curl http://127.0.0.1:8766/api/ping -H "Authorization: Bearer <CONTROL_PANEL_TOK
 
 ## Nginx + HTTPS
 
-這台 VM 目前使用 `/etc/nginx/conf.d/proxy-ssl.conf` 服務 `cheng.tplinkdns.com`，且根路徑已提供既有站台。請把 `/opt/quant-trade/deploy/nginx/quant-trade-location.conf` 內的兩個 `location` block 插入到既有 `server_name cheng.tplinkdns.com` 的 HTTPS server 內，並放在既有 `location /` 之前。
+這台 VM 目前使用 `/etc/nginx/conf.d/proxy-ssl.conf` 服務 `cheng.tplinkdns.com`，且根路徑已提供既有站台。請把 `/opt/quant-trade/deploy/nginx/quant-trade-location.conf` 內的 `location` block 插入到既有 `server_name cheng.tplinkdns.com` 的 HTTPS server 內，並放在既有 `location /` 之前。
 
 如果 HTTP server 也直接提供內容，請在 HTTP server 的既有 `location /` 之前加入同樣 block，或只保留既有 HTTP→HTTPS redirect。
+
+若此 VM 位於中央閘道後方，`allow` 白名單看到的可能是閘道或內網來源 IP，不一定是真實訪客 IP。真實外部 IP 白名單應優先在中央閘道設定；若要在本機 Nginx 判斷真實 IP，必須先正確設定可信任的 `set_real_ip_from` 與 `real_ip_header`。
 
 套用後檢查：
 
@@ -136,13 +139,15 @@ certbot --nginx -d cheng.tplinkdns.com
 ```bash
 curl -I https://cheng.tplinkdns.com/quant-trade/
 curl https://cheng.tplinkdns.com/quant-trade/api/ping
-curl https://cheng.tplinkdns.com/quant-trade/api/ping -H "Authorization: Bearer <CONTROL_PANEL_TOKEN>"
+curl -u '<BASIC_AUTH_USER>:<BASIC_AUTH_PASSWORD>' https://cheng.tplinkdns.com/quant-trade/api/ping
+curl -u '<BASIC_AUTH_USER>:<BASIC_AUTH_PASSWORD>' https://cheng.tplinkdns.com/quant-trade/api/ping -H "X-Control-Panel-Token: <CONTROL_PANEL_TOKEN>"
 ```
 
 預期：
 
-- 未帶 token 的 `/api/ping` 回 `401`。
-- 帶 token 的 `/api/ping` 回 `{"status":"ok",...}`。
+- 未通過 Basic Auth 的 `/quant-trade/` 與 `/quant-trade/api/*` 回 `401`。
+- 通過 Basic Auth、未帶 token 的 `/api/ping` 回 `401`。
+- 通過 Basic Auth 且帶 token 的 `/api/ping` 回 `{"status":"ok",...}`。
 - 瀏覽器打開 `https://cheng.tplinkdns.com/quant-trade/` 後，到「設定」輸入 `CONTROL_PANEL_TOKEN`，之後 API 與報表連結會自動帶入 token。
 
 ## 更新部署

@@ -48,7 +48,7 @@ def test_control_panel_home_exposes_browser_token_storage(monkeypatch):
     assert response.status_code == 200
     assert "control-panel-token" in response.text
     assert "quant_trade_control_panel_token" in response.text
-    assert "Authorization" in response.text
+    assert "X-Control-Panel-Token" in response.text
 
 
 def test_control_panel_token_protects_reports(monkeypatch, report_file):
@@ -59,7 +59,7 @@ def test_control_panel_token_protects_reports(monkeypatch, report_file):
     blocked_static = client.get(f"/reports/{report_file.name}")
     blocked_list = client.get("/api/reports")
     allowed_static = client.get(f"/reports/{report_file.name}", headers={"X-Control-Panel-Token": "secret-token"})
-    allowed_list = client.get("/api/reports", headers={"Authorization": "Bearer secret-token"})
+    allowed_list = client.get("/api/reports", headers={"X-Control-Panel-Token": "secret-token"})
 
     assert blocked_static.status_code == 401
     assert blocked_list.status_code == 401
@@ -110,7 +110,7 @@ def test_tw_live_api_is_token_protected(monkeypatch):
 
     blocked = client.get("/api/tw-live/health?simulation=true")
     blocked_audit = client.get("/api/tw-live/audit")
-    allowed = client.get("/api/tw-live/health?simulation=true", headers={"Authorization": "Bearer secret-token"})
+    allowed = client.get("/api/tw-live/health?simulation=true", headers={"X-Control-Panel-Token": "secret-token"})
 
     assert blocked.status_code == 401
     assert blocked_audit.status_code == 401

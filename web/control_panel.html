@@ -1084,7 +1084,7 @@
       const opts = { ...options };
       const headers = new Headers(opts.headers || (resource instanceof Request ? resource.headers : undefined));
       if (token && requestNeedsControlPanelToken(resource)) {
-        headers.set('Authorization', `Bearer ${token}`);
+        headers.set('X-Control-Panel-Token', token);
       }
       opts.headers = headers;
       return nativeFetch(withControlPanelBasePath(resource), opts);
