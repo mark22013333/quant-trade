@@ -33,6 +33,8 @@ REPORTS_DIR = PROJECT_ROOT / "reports"
 LOG_PATH = REPORTS_DIR / "control_panel.log"
 ENV_PATH = PROJECT_ROOT / ".env"
 
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def _append_log_line(action: str, message: str) -> None:
     try:
