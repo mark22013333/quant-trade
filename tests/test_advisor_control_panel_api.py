@@ -30,7 +30,7 @@ def test_order_approve_execute_requires_manual_and_promotion(monkeypatch):
 
     response = client.post(
         "/api/tw-live/order-approve-execute",
-        json={"preview_id": "missing", "manual_confirmed": False, "promotion_gate_accepted": False},
+        json={"preview_id": "missing-preview", "manual_confirmed": False, "promotion_gate_accepted": False},
     )
 
     assert response.status_code == 400
