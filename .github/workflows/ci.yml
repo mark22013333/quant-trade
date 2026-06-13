@@ -20,13 +20,10 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
       - name: Ruff
-        continue-on-error: true
-        run: python -m ruff check .
+        run: python -m ruff check . || echo "::warning::Ruff reported issues; keeping this advisory until the backlog is cleaned up."
       - name: Dependency vulnerability scan
-        continue-on-error: true
         run: |
           python -m pip install pip-audit
-          python -m pip_audit
+          python -m pip_audit || echo "::warning::pip-audit reported vulnerabilities; keeping this advisory until dependencies are upgraded."
       - name: Secret scan
-        continue-on-error: true
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3

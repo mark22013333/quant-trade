@@ -7,7 +7,7 @@ from app.security import redact_sensitive
 
 def test_redact_sensitive_masks_nested_credentials():
     payload = {
-        "SHIOAJI_APIKEY": "abcdef1234567890",
+        "SHIOAJI_APIKEY": "dummy",
         "nested": {
             "account_id": "123456789",
             "public": "2330",
@@ -17,7 +17,7 @@ def test_redact_sensitive_masks_nested_credentials():
 
     redacted = redact_sensitive(payload)
 
-    assert redacted["SHIOAJI_APIKEY"] != "abcdef1234567890"
+    assert redacted["SHIOAJI_APIKEY"] != "dummy"
     assert redacted["nested"]["account_id"] != "123456789"
     assert redacted["nested"]["public"] == "2330"
     assert redacted["items"][0]["secret"] != "super-secret-value"
