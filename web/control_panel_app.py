@@ -5,6 +5,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from ipaddress import ip_address, ip_network
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -82,9 +83,38 @@ def _trusted_proxy_user(request: Request) -> str:
     if os.getenv("CONTROL_PANEL_TRUST_PROXY_AUTH", "").strip() != "1":
         return ""
     client_host = request.client.host if request.client else ""
-    if not _is_loopback_host(client_host):
+    if not _is_trusted_proxy_auth_source(client_host):
         return ""
     return str(request.headers.get("x-authenticated-user") or "").strip()
+
+
+def _is_trusted_proxy_auth_source(host: str | None) -> bool:
+    value = str(host or "").split(":")[0].strip().lower()
+    if _is_loopback_host(value):
+        return True
+
+    raw_sources = os.getenv("CONTROL_PANEL_TRUST_PROXY_AUTH_SOURCES", "").strip()
+    if not raw_sources:
+        return False
+
+    try:
+        candidate = ip_address(value)
+    except ValueError:
+        return value in {item.strip().lower() for item in raw_sources.split(",") if item.strip()}
+
+    for item in (part.strip() for part in raw_sources.split(",")):
+        if not item:
+            continue
+        try:
+            if "/" in item:
+                if candidate in ip_network(item, strict=False):
+                    return True
+            elif candidate == ip_address(item):
+                return True
+        except ValueError:
+            if value == item.lower():
+                return True
+    return False
 
 
 def _with_security_headers(response):
