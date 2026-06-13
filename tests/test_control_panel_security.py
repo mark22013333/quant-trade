@@ -28,6 +28,7 @@ def report_file():
 def test_control_panel_token_protects_api(monkeypatch):
     monkeypatch.setenv("CONTROL_PANEL_TOKEN", "secret-token")
     monkeypatch.setenv("CONTROL_PANEL_BIND_HOST", "127.0.0.1")
+    monkeypatch.delenv("CONTROL_PANEL_TRUST_PROXY_AUTH", raising=False)
     client = TestClient(app)
 
     blocked = client.get("/api/ping")
@@ -36,6 +37,18 @@ def test_control_panel_token_protects_api(monkeypatch):
     assert blocked.status_code == 401
     assert allowed.status_code == 200
     assert allowed.json()["status"] == "ok"
+
+
+def test_control_panel_accepts_trusted_proxy_auth(monkeypatch):
+    monkeypatch.setenv("CONTROL_PANEL_TOKEN", "secret-token")
+    monkeypatch.setenv("CONTROL_PANEL_BIND_HOST", "127.0.0.1")
+    monkeypatch.setenv("CONTROL_PANEL_TRUST_PROXY_AUTH", "1")
+    client = TestClient(app)
+
+    response = client.get("/api/ping", headers={"X-Authenticated-User": "quanttrade"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
 
 
 def test_control_panel_home_exposes_browser_token_storage(monkeypatch):

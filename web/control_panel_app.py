@@ -78,6 +78,15 @@ def _request_token(request: Request) -> str:
     return str(request.headers.get("x-control-panel-token") or "").strip()
 
 
+def _trusted_proxy_user(request: Request) -> str:
+    if os.getenv("CONTROL_PANEL_TRUST_PROXY_AUTH", "").strip() != "1":
+        return ""
+    client_host = request.client.host if request.client else ""
+    if not _is_loopback_host(client_host):
+        return ""
+    return str(request.headers.get("x-authenticated-user") or "").strip()
+
+
 def _with_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -104,7 +113,7 @@ async def _security_guard(request: Request, call_next):
 
     if token:
         protected = request.url.path.startswith("/api") or request.url.path.startswith("/reports")
-        if protected and _request_token(request) != token:
+        if protected and _request_token(request) != token and not _trusted_proxy_user(request):
             return _with_security_headers(JSONResponse({"status": "error", "error": "unauthorized"}, status_code=401))
     elif external_bind or external_client:
         return _with_security_headers(

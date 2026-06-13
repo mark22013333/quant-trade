@@ -72,6 +72,7 @@ venv/bin/python -m pip install TA-Lib
 
 ```bash
 CONTROL_PANEL_TOKEN=<long-random-token>
+CONTROL_PANEL_TRUST_PROXY_AUTH=1
 DATABASE_URL=sqlite:////opt/quant-trade/data/quant_trade.db
 SHIOAJI_ENABLE_LIVE_ORDERS=
 
@@ -146,9 +147,9 @@ curl -u '<BASIC_AUTH_USER>:<BASIC_AUTH_PASSWORD>' https://cheng.tplinkdns.com/qu
 預期：
 
 - 未通過 Basic Auth 的 `/quant-trade/` 與 `/quant-trade/api/*` 回 `401`。
-- 通過 Basic Auth、未帶 token 的 `/api/ping` 回 `401`。
+- 若已設定 `CONTROL_PANEL_TRUST_PROXY_AUTH=1` 且 Nginx 傳遞 `X-Authenticated-User`，通過 Basic Auth 後可直接操作 API，不必在瀏覽器再輸入 token。
 - 通過 Basic Auth 且帶 token 的 `/api/ping` 回 `{"status":"ok",...}`。
-- 瀏覽器打開 `https://cheng.tplinkdns.com/quant-trade/` 後，到「設定」輸入 `CONTROL_PANEL_TOKEN`，之後 API 與報表連結會自動帶入 token。
+- 瀏覽器打開 `https://cheng.tplinkdns.com/quant-trade/` 後，輸入 Basic Auth 帳密即可操作；「設定」中的 `CONTROL_PANEL_TOKEN` 保留給本機直連或除錯。
 
 ## 更新部署
 

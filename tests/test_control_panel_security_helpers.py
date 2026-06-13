@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from fastapi.responses import JSONResponse
 
-from web.control_panel_app import _is_loopback_host, _request_token, _with_security_headers
+from web.control_panel_app import _is_loopback_host, _request_token, _trusted_proxy_user, _with_security_headers
 
 
 def test_is_loopback_host_accepts_local_and_test_hosts():
@@ -21,6 +21,22 @@ def test_request_token_accepts_bearer_or_header_token():
 
     assert _request_token(bearer_request) == "secret-token"
     assert _request_token(header_request) == "header-token"
+
+
+def test_trusted_proxy_user_requires_flag_and_loopback(monkeypatch):
+    monkeypatch.delenv("CONTROL_PANEL_TRUST_PROXY_AUTH", raising=False)
+    request = SimpleNamespace(
+        client=SimpleNamespace(host="127.0.0.1"),
+        headers={"x-authenticated-user": "quanttrade"},
+    )
+
+    assert _trusted_proxy_user(request) == ""
+
+    monkeypatch.setenv("CONTROL_PANEL_TRUST_PROXY_AUTH", "1")
+    assert _trusted_proxy_user(request) == "quanttrade"
+
+    request.client.host = "203.0.113.10"
+    assert _trusted_proxy_user(request) == ""
 
 
 def test_security_headers_disable_cache_and_sniffing():
