@@ -39,7 +39,7 @@ ss -ltnp
 CentOS Stream 8 / RHEL-like：
 
 ```bash
-dnf install -y git nginx python39 python39-pip python39-devel gcc gcc-c++ make
+dnf install -y git nginx python3.11 python3.11-pip python3.11-devel gcc gcc-c++ make
 ```
 
 Ubuntu/Debian：
@@ -55,7 +55,7 @@ apt install -y python3-venv python3-pip git nginx certbot python3-certbot-nginx
 mkdir -p /opt
 git clone https://github.com/mark22013333/quant-trade.git /opt/quant-trade
 cd /opt/quant-trade
-python3.9 -m venv venv
+python3.11 -m venv venv
 venv/bin/python -m pip install --upgrade pip
 venv/bin/python -m pip install -r requirements.txt
 mkdir -p data reports .cache
