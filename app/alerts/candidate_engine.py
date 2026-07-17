@@ -5,7 +5,9 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from app.alerts.signal_engine import evaluate_entry_signal
+from app.data.symbol_exclusions import load_symbol_exclusions
 from app.services.scoring import score_symbol
+from app.services.market_context import compute_group_trend_metrics, apply_group_rotation_scores, select_with_group_diversity
 from app.services.universe import normalize_risk_profile
 
 if TYPE_CHECKING:
@@ -25,6 +27,15 @@ class CandidateItem:
     last_bar_date: str | None = None
     data_quality: str = "unknown"
     fundamental_data_quality: str = "missing"
+    industry_group: str = "其他"
+    industry_rotation_score: float = 0.0
+    industry_trend_label: str = "neutral"
+    industry_trend_score: float = 0.0
+    industry_short_return: float = 0.0
+    industry_medium_return: float = 0.0
+    industry_breadth: float = 0.0
+    atr_pct: float = 0.0
+    atr_heat: str = "normal"
 
 
 def build_candidates(
@@ -44,13 +55,22 @@ def build_candidates(
         liquidity_entry_min = 0.25
         liquidity_flag_min = 0.25
         aggressive_entry_score = 0.66
+    elif profile == "conservative":
+        watch_threshold = 0.64 if not relaxed else 0.45
+        chip_min = 0.55
+        liquidity_entry_min = 0.38
+        liquidity_flag_min = 0.38
+        aggressive_entry_score = 0.0
     else:
         watch_threshold = 0.60 if not relaxed else 0.40
         chip_min = 0.45
         liquidity_entry_min = 0.30
         liquidity_flag_min = 0.30
         aggressive_entry_score = 0.0
+    excluded_symbols = load_symbol_exclusions()
     for symbol in sorted(set(symbols)):
+        if str(symbol).strip().upper() in excluded_symbols:
+            continue
         scored = score_symbol(
             repo,
             symbol=symbol,
@@ -62,13 +82,16 @@ def build_candidates(
             continue
         if data_freshness_required and scored.data_quality != "fresh":
             continue
-        if scored.disposition_active:
+        if scored.disposition_active or scored.attention_active:
             continue
         signal = scored.signal
         chip_ok = scored.chip_score >= chip_min
 
         reason_codes: list[str] = [
             f"profile={profile}",
+            f"industry_group={scored.industry_group}",
+            f"atr_pct={scored.atr_pct * 100.0:.2f}",
+            f"atr_heat={scored.atr_heat}",
             f"signal_entry={bool(signal.get('entry'))}",
             f"chip_up3={scored.chip_up3}",
             f"major_ratio={scored.major_ratio:.2f}",
@@ -88,6 +111,10 @@ def build_candidates(
             risk_flags.append("low_liquidity")
         if scored.structure_score < 0.35:
             risk_flags.append("holder_structure_weak")
+        if scored.atr_heat == "hot":
+            risk_flags.append("atr_overheated")
+        elif scored.atr_heat == "elevated":
+            risk_flags.append("atr_elevated")
 
         aggressive_entry = (
             profile == "aggressive"
@@ -117,21 +144,60 @@ def build_candidates(
                 last_bar_date=scored.last_bar_date,
                 data_quality=scored.data_quality,
                 fundamental_data_quality=scored.fundamental_data_quality,
+                industry_group=scored.industry_group,
+                industry_rotation_score=0.0,
+                atr_pct=float(scored.atr_pct),
+                atr_heat=scored.atr_heat,
             )
         )
-    rows.sort(key=lambda item: (item.score, item.risk_score), reverse=True)
+    trend_metrics = compute_group_trend_metrics(
+        rows,
+        repo=repo,
+        trade_date=trade_date,
+        symbol_getter=lambda item: item.symbol,
+        group_getter=lambda item: item.industry_group,
+    )
+
+    def _set_rotation_score(item: CandidateItem, score: float) -> None:
+        trend = trend_metrics.get(item.industry_group, {})
+        trend_score = float(trend.get("score", 0.0) or 0.0) if trend else 0.0
+        combined_score = (float(score) * 0.70) + (trend_score * 0.30) if trend else float(score)
+        item.industry_rotation_score = float(combined_score)
+        item.industry_trend_label = str(trend.get("label", "neutral") or "neutral") if trend else "neutral"
+        item.industry_trend_score = trend_score
+        item.industry_short_return = float(trend.get("short_return", 0.0) or 0.0) if trend else 0.0
+        item.industry_medium_return = float(trend.get("medium_return", 0.0) or 0.0) if trend else 0.0
+        item.industry_breadth = float(trend.get("breadth", 0.0) or 0.0) if trend else 0.0
+        item.reason_codes.insert(3, f"industry_rotation_score={combined_score * 100.0:.1f}")
+        item.reason_codes.insert(4, f"industry_trend={item.industry_trend_label}")
+        item.reason_codes.insert(5, f"industry_trend_score={trend_score * 100.0:.1f}")
+        item.reason_codes.insert(6, f"industry_short_return={item.industry_short_return * 100.0:.2f}")
+        item.reason_codes.insert(7, f"industry_medium_return={item.industry_medium_return * 100.0:.2f}")
+        item.reason_codes.insert(8, f"industry_breadth={item.industry_breadth * 100.0:.1f}")
+
+    apply_group_rotation_scores(
+        rows,
+        group_getter=lambda item: item.industry_group,
+        score_getter=lambda item: item.score,
+        setter=_set_rotation_score,
+    )
+    rows.sort(
+        key=lambda item: (item.score + (item.industry_rotation_score * 0.03), item.risk_score),
+        reverse=True,
+    )
     return rows
 
 
-def select_candidates(candidates: list[CandidateItem], target_count: int = 8) -> list[CandidateItem]:
+def select_candidates(candidates: list[CandidateItem], target_count: int = 8, risk_profile: str = "balanced") -> list[CandidateItem]:
     cap = max(5, min(10, int(target_count or 8)))
     entries = [item for item in candidates if item.candidate_type == "entry"]
     watches = [item for item in candidates if item.candidate_type == "watch"]
-    selected: list[CandidateItem] = []
-    selected.extend(entries[:cap])
-    remaining = cap - len(selected)
-    if remaining > 0:
-        selected.extend(watches[:remaining])
+    selected = select_with_group_diversity(
+        [*entries, *watches],
+        target_count=cap,
+        group_getter=lambda item: item.industry_group,
+        risk_profile=risk_profile,
+    )
     for idx, item in enumerate(selected, start=1):
         item.reason_codes = [f"rank={idx}", *item.reason_codes]
     return selected
@@ -154,6 +220,15 @@ def build_candidate_payload(items: list[CandidateItem]) -> list[dict]:
                 "last_bar_date": item.last_bar_date,
                 "data_quality": item.data_quality,
                 "fundamental_data_quality": item.fundamental_data_quality,
+                "industry_group": item.industry_group,
+                "industry_rotation_score": float(item.industry_rotation_score),
+                "industry_trend_label": item.industry_trend_label,
+                "industry_trend_score": float(item.industry_trend_score),
+                "industry_short_return": float(item.industry_short_return),
+                "industry_medium_return": float(item.industry_medium_return),
+                "industry_breadth": float(item.industry_breadth),
+                "atr_pct": float(item.atr_pct),
+                "atr_heat": item.atr_heat,
             }
         )
     return payload
@@ -177,7 +252,7 @@ def generate_candidate_suggestions(
         relaxed=False,
         risk_profile=profile,
     )
-    selected = select_candidates(first, target_count=target_count)
+    selected = select_candidates(first, target_count=target_count, risk_profile=profile)
     relaxed_applied = False
     if len(selected) < 5:
         relaxed_applied = True
@@ -189,5 +264,5 @@ def generate_candidate_suggestions(
             relaxed=True,
             risk_profile=profile,
         )
-        selected = select_candidates(second, target_count=target_count)
+        selected = select_candidates(second, target_count=target_count, risk_profile=profile)
     return build_candidate_payload(selected), relaxed_applied

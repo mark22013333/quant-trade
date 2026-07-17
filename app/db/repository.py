@@ -2473,9 +2473,12 @@ class TradingRepository:
                     "run_id": str(meta.get("run_id", "")),
                     "trade_date": str(meta.get("trade_date", "")),
                     "target_count": int(meta.get("target_count", 0) or 0),
+                    "candidate_mode": str(meta.get("candidate_mode", "")),
                     "degraded": bool(meta.get("degraded", False)),
                     "insufficient_candidates": bool(meta.get("insufficient_candidates", False)),
                     "degrade_reasons": list(meta.get("degrade_reasons", [])),
+                    "quality_warnings": list(meta.get("quality_warnings", [])),
+                    "skipped_steps": list(meta.get("skipped_steps", [])),
                 }
             )
         return output
@@ -2496,6 +2499,7 @@ class TradingRepository:
             existing.price = float(item.get("price", 0.0) or 0.0)
             existing.entry_score = float(item.get("entry_score", 0.0) or 0.0)
             existing.risk_score = float(item.get("risk_score", 0.0) or 0.0)
+            existing.risk_adjusted_score = float(item.get("risk_adjusted_score", 0.0) or 0.0)
             existing.action_label = str(item.get("action_label", "WATCH_WAIT_TRIGGER") or "WATCH_WAIT_TRIGGER")
             existing.candidate_type = str(item.get("candidate_type", "watch") or "watch")
             existing.reason_tags_json = json.dumps(item.get("reason_tags", []), ensure_ascii=False)
@@ -2508,6 +2512,9 @@ class TradingRepository:
             existing.news_risk_score = float(item.get("news_risk_score", 0.5) or 0.5)
             existing.fundamental_summary_json = json.dumps(item.get("fundamental_summary", {}), ensure_ascii=False, default=str)
             existing.news_summary_json = json.dumps(item.get("news_summary", {}), ensure_ascii=False, default=str)
+            existing.risk_quality_score = float(item.get("risk_quality_score", 0.0) or 0.0)
+            existing.risk_quality_label = str(item.get("risk_quality_label", "") or "")
+            existing.risk_quality_reason = str(item.get("risk_quality_reason", "") or "")
             rows += 1
         return rows
 

@@ -26,8 +26,10 @@ class OneClickPipelineRequest:
     trade_date: date | str | None = None
     target_count: int = 8
     risk_profile: str = "balanced"
-    universe: str = "twse_tpex"
+    universe: str = "curated_watchlist"
     data_freshness_required: bool = True
+    include_attention: bool = True
+    include_extended_chip: bool = True
     symbols: list[str] | None = None
 
     def normalized_trade_date(self) -> date:
@@ -61,6 +63,8 @@ class InvestPipelineService:
         run_id = f"run_{trade_date.strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
         step_metrics: dict[str, Any] = {}
         degrade_reasons: list[str] = []
+        quality_warnings: list[str] = []
+        skipped_steps: list[str] = []
 
         def _progress(progress: int, message: str, append_log: str | None = None) -> None:
             if progress_hook is None:
@@ -74,13 +78,15 @@ class InvestPipelineService:
             }
 
         # Step 0: resolve universe
-        _progress(12, "Step 1/4：解析股票池（上市+上櫃）", "resolve universe")
+        _progress(12, "Step 1/4：解析股票池", "resolve universe")
         started = datetime.now()
         custom_symbols = request.normalized_symbols()
         if custom_symbols:
             symbols = custom_symbols
+            universe_mode = "custom"
         else:
             symbols = self._resolve_universe(request.universe)
+            universe_mode = request.universe or "curated_watchlist"
         if not symbols:
             symbols = self.sync_service._resolve_symbols(None)  # noqa: SLF001
             degrade_reasons.append("universe_fallback_to_0050")
@@ -91,26 +97,45 @@ class InvestPipelineService:
                 return 0
             return sum(1 for symbol in items if not str(getter(symbol) or "").strip())
 
+        def _industry_coverage(items: list[str]) -> dict:
+            method = getattr(self.repo, "get_instrument_industry_coverage", None)
+            if not callable(method):
+                return {}
+            try:
+                payload = method(symbols=items)
+            except TypeError:
+                payload = method()
+            return payload if isinstance(payload, dict) else {}
+
         missing_names_before = _count_missing_names(symbols)
+        industry_coverage_before = _industry_coverage(symbols)
+        missing_industries_before = int(industry_coverage_before.get("missing_industry_count") or 0)
         name_sync_attempted = False
-        if missing_names_before > 0 and hasattr(self.sync_service, "sync_twse_tpex_universe"):
+        if (missing_names_before > 0 or missing_industries_before > 0) and hasattr(self.sync_service, "sync_twse_tpex_universe"):
             name_sync_attempted = True
             try:
                 self.sync_service.sync_twse_tpex_universe()
             except Exception:
-                degrade_reasons.append("instrument_name_sync_failed")
+                degrade_reasons.append("instrument_metadata_sync_failed")
         missing_names_after = _count_missing_names(symbols)
+        industry_coverage_after = _industry_coverage(symbols)
+        missing_industries_after = int(industry_coverage_after.get("missing_industry_count") or 0)
         if missing_names_after > 0:
             degrade_reasons.append("instrument_name_missing")
+        if missing_industries_after > 0:
+            degrade_reasons.append("instrument_industry_missing")
         _mark_step(
             "resolve_universe",
             started,
             {
-                "universe": "custom" if custom_symbols else request.universe,
+                "universe": universe_mode,
                 "symbols": len(symbols),
                 "name_sync_attempted": name_sync_attempted,
                 "missing_names_before": missing_names_before,
                 "missing_names_after": missing_names_after,
+                "missing_industries_before": missing_industries_before,
+                "missing_industries_after": missing_industries_after,
+                "industry_coverage_pct": industry_coverage_after.get("coverage_pct"),
             },
         )
 
@@ -126,7 +151,11 @@ class InvestPipelineService:
             include_institutional=True,
             include_broker_agg=False,
             include_disposition=True,
+            include_attention=bool(request.include_attention),
+            include_industry_indices=True,
         )
+        if not bool(request.include_attention):
+            degrade_reasons.append("attention_sync_skipped")
         if bool(core_sync.get("partial_failure")):
             degrade_reasons.append("core_sync_partial_failure")
         _mark_step(
@@ -143,11 +172,20 @@ class InvestPipelineService:
         # Step 2: sync extended chip bundle
         _progress(48, "Step 2/4：同步擴展籌碼資料", "sync extended chip bundle")
         started = datetime.now()
-        extended_sync = self.sync_service.sync_extended_chip_bundle(
-            start_date=start_date,
-            end_date=trade_date,
-            symbols=symbols,
-        )
+        if bool(request.include_extended_chip):
+            extended_sync = self.sync_service.sync_extended_chip_bundle(
+                start_date=start_date,
+                end_date=trade_date,
+                symbols=symbols,
+            )
+        else:
+            extended_sync = {
+                "rows_upserted_total": 0,
+                "partial_failure": False,
+                "degraded_count": 0,
+                "skipped": True,
+            }
+            skipped_steps.append("extended_chip_sync_skipped")
         if bool(extended_sync.get("partial_failure")):
             degrade_reasons.append("extended_chip_partial_failure")
         if int(extended_sync.get("degraded_count", 0) or 0) > 0:
@@ -195,10 +233,11 @@ class InvestPipelineService:
             risk_profile=risk_profile,
         )
         if relaxed_applied:
-            degrade_reasons.append("relaxed_trigger_applied")
+            quality_warnings.append("relaxed_trigger_applied")
         insufficient_candidates = len(candidates) < 5
         if insufficient_candidates:
             degrade_reasons.append("insufficient_candidates")
+        candidate_mode = "insufficient" if insufficient_candidates else "relaxed_watch" if relaxed_applied else "standard"
         _mark_step(
             "score_candidates",
             started,
@@ -206,6 +245,7 @@ class InvestPipelineService:
                 "candidates": len(candidates),
                 "target_count": target_count,
                 "relaxed_applied": bool(relaxed_applied),
+                "candidate_mode": candidate_mode,
             },
         )
 
@@ -226,8 +266,11 @@ class InvestPipelineService:
                     "target_count": target_count,
                     "risk_profile": risk_profile,
                     "degraded": degraded,
+                    "candidate_mode": candidate_mode,
                     "insufficient_candidates": insufficient_candidates,
                     "degrade_reasons": degrade_reasons,
+                    "quality_warnings": quality_warnings,
+                    "skipped_steps": skipped_steps,
                 },
                 ensure_ascii=False,
             ),
@@ -239,12 +282,15 @@ class InvestPipelineService:
             "trade_date": trade_date.isoformat(),
             "target_count": target_count,
             "risk_profile": risk_profile,
-            "universe": "custom" if custom_symbols else "twse_tpex",
+            "universe": universe_mode,
             "symbols": symbols,
             "candidates": candidates,
+            "candidate_mode": candidate_mode,
             "insufficient_candidates": insufficient_candidates,
             "degraded": degraded,
             "degrade_reasons": degrade_reasons,
+            "quality_warnings": quality_warnings,
+            "skipped_steps": skipped_steps,
             "step_metrics": step_metrics,
             "export": export,
         }
@@ -289,6 +335,15 @@ class InvestPipelineService:
             "price",
             "score",
             "risk_score",
+            "industry_group",
+            "industry_rotation_score",
+            "industry_trend_label",
+            "industry_trend_score",
+            "industry_short_return",
+            "industry_medium_return",
+            "industry_breadth",
+            "atr_pct",
+            "atr_heat",
             "candidate_type",
             "last_bar_date",
             "data_quality",
@@ -304,6 +359,15 @@ class InvestPipelineService:
                 row.get("price", ""),
                 row.get("score", ""),
                 row.get("risk_score", ""),
+                row.get("industry_group", ""),
+                row.get("industry_rotation_score", ""),
+                row.get("industry_trend_label", ""),
+                row.get("industry_trend_score", ""),
+                row.get("industry_short_return", ""),
+                row.get("industry_medium_return", ""),
+                row.get("industry_breadth", ""),
+                row.get("atr_pct", ""),
+                row.get("atr_heat", ""),
                 row.get("candidate_type", ""),
                 row.get("last_bar_date", ""),
                 row.get("data_quality", ""),
