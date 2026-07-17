@@ -156,7 +156,10 @@ class ShioajiAccountService:
     def get_account_snapshot(self, simulation: bool) -> AccountSnapshot:
         api = None
         try:
-            api, _ = self._login(simulation=simulation)
+            # Account balance, positions and open orders are read-only queries;
+            # activating the signing certificate here is unnecessary and can
+            # block snapshots when CA setup is unavailable or invalid.
+            api, _ = self._login(simulation=simulation, activate_ca=False)
             account = getattr(api, "stock_account", None)
             positions = self.get_positions(simulation=simulation, api=api)
             realized_pnl = self._read_realized_pnl(api, account, datetime.now().date())
@@ -181,7 +184,7 @@ class ShioajiAccountService:
     def get_positions(self, simulation: bool, api: Any | None = None) -> list[StockPosition]:
         own_api = api is None
         if api is None:
-            api, _ = self._login(simulation=simulation)
+            api, _ = self._login(simulation=simulation, activate_ca=False)
         try:
             account = getattr(api, "stock_account", None)
             rows, query_unit = self._read_position_rows(api, account)
@@ -193,7 +196,7 @@ class ShioajiAccountService:
     def get_settlements(self, simulation: bool, api: Any | None = None) -> list[SettlementItem]:
         own_api = api is None
         if api is None:
-            api, _ = self._login(simulation=simulation)
+            api, _ = self._login(simulation=simulation, activate_ca=False)
         try:
             account = getattr(api, "stock_account", None)
             rows = self._call_account_api(api, "settlements", account)
@@ -207,7 +210,7 @@ class ShioajiAccountService:
     def get_open_orders(self, simulation: bool, api: Any | None = None) -> list[OpenOrder]:
         own_api = api is None
         if api is None:
-            api, _ = self._login(simulation=simulation)
+            api, _ = self._login(simulation=simulation, activate_ca=False)
         try:
             rows = self._call_account_api(api, "list_trades", getattr(api, "stock_account", None)) or []
             output: list[OpenOrder] = []
@@ -222,7 +225,7 @@ class ShioajiAccountService:
             if own_api:
                 self._logout(api)
 
-    def _login(self, *, simulation: bool):
+    def _login(self, *, simulation: bool, activate_ca: bool = True):
         if self.api_factory is not None:
             api = self.api_factory(bool(simulation))
             return api, getattr(api, "shioaji_version", "test")
@@ -237,7 +240,7 @@ class ShioajiAccountService:
             raise RuntimeError("SHIOAJI_APIKEY/SHIOAJI_SECRET missing")
         api = sj.Shioaji(simulation=bool(simulation))
         api.login(api_key=api_key, secret_key=secret)
-        if not simulation:
+        if not simulation and activate_ca:
             ca_path = os.getenv("SHIOAJI_CA_PATH", "").strip()
             ca_password = os.getenv("SHIOAJI_CA_PASSWORD", "").strip()
             if ca_path and ca_password and hasattr(api, "activate_ca"):

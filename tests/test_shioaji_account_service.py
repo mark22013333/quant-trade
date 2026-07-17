@@ -75,3 +75,37 @@ def test_position_parser_converts_common_lots_to_shares():
     assert position.yesterday_quantity == 1000
     assert position.quantity_unit == "shares"
     assert position.sellable_source == "yd_quantity"
+
+
+def test_account_snapshot_does_not_activate_ca_for_read_only_queries(monkeypatch):
+    monkeypatch.setenv("SHIOAJI_APIKEY", "key")
+    monkeypatch.setenv("SHIOAJI_SECRET", "secret")
+    login_calls = []
+
+    class Api:
+        stock_account = SimpleNamespace(account_id="1234567890")
+        Unit = SimpleNamespace(Share="Share")
+
+        def account_balance(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            return SimpleNamespace(acc_balance=0.0)
+
+        def list_positions(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            return []
+
+        def list_profit_loss_summary(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            return SimpleNamespace(total_pnl=0.0)
+
+        def settlements(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            return []
+
+        def list_trades(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            return []
+
+    class Service(ShioajiAccountService):
+        def _login(self, *, simulation: bool, activate_ca: bool = True):
+            login_calls.append((simulation, activate_ca))
+            return Api(), "test"
+
+    Service().get_account_snapshot(simulation=False)
+
+    assert login_calls == [(False, False)]
