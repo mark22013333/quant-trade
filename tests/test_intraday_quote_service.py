@@ -147,6 +147,22 @@ def test_intraday_quote_service_recreates_manager_when_environment_changes():
     assert status["include_bidask"] is False
 
 
+def test_intraday_quote_service_clears_previous_stop_time_when_restarted():
+    created: list[_FakeGateway] = []
+    service = IntradayQuoteService(
+        gateway_factory=lambda simulation: created.append(_FakeGateway(simulation)) or created[-1],
+        now_fn=lambda: datetime(2026, 7, 13, 10, 0, 0),
+    )
+
+    service.start(["2330"], simulation=True)
+    stopped = service.stop()
+    restarted = service.start(["2330"], simulation=True)
+
+    assert stopped["stopped_at"]
+    assert restarted["state"] == "running"
+    assert restarted["stopped_at"] == ""
+
+
 def test_intraday_quote_service_reports_disconnected_health_as_danger():
     created: list[_FakeGateway] = []
     service = IntradayQuoteService(

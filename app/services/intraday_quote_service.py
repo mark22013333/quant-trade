@@ -463,6 +463,7 @@ class IntradayQuoteService:
                 self._manager = self._gateway.create_stock_streaming_quote_manager(include_bidask=bool(include_bidask))
                 self._symbols = []
                 self._started_at = datetime.now().isoformat(timespec="seconds")
+                self._stopped_at = ""
                 self._session_summary = self._new_session_summary()
             self._simulation = bool(simulation)
             self._include_bidask = bool(include_bidask)
