@@ -38,7 +38,11 @@ class PreTradeCheckService:
         avg_volume_20: float | None = None,
         portfolio_equity: float | None = None,
         current_position_value: float = 0.0,
+        current_portfolio_exposure: float | None = None,
         daily_pnl: float = 0.0,
+        max_single_position_pct: float = 0.10,
+        max_portfolio_exposure_pct: float = 0.95,
+        max_daily_loss_pct: float = 0.02,
     ) -> PreTradeDecision:
         checks: list[dict[str, Any]] = []
         quality = data_quality or DataQualityStatus()
@@ -151,8 +155,10 @@ class PreTradeCheckService:
             projected = max(0.0, float(current_position_value or 0.0))
             if intent.side == "buy":
                 projected += float(qty) * float(intent.price)
-            single_position_ok = projected <= float(portfolio_equity) * 0.10
-            daily_loss_ok = float(daily_pnl) >= -(float(portfolio_equity) * 0.02)
+            elif intent.side == "sell":
+                projected = max(0.0, projected - float(qty) * float(intent.price))
+            single_position_ok = projected <= float(portfolio_equity) * float(max_single_position_pct)
+            daily_loss_ok = float(daily_pnl) >= -(float(portfolio_equity) * float(max_daily_loss_pct))
         else:
             projected = None
             single_position_ok = True
@@ -163,6 +169,39 @@ class PreTradeCheckService:
         checks.append({"name": "daily_loss_limit", "passed": bool(daily_loss_ok), "daily_pnl": float(daily_pnl)})
         if not daily_loss_ok:
             return self._reject(intent, "daily_loss_limit", checks, quality)
+
+        if portfolio_equity is not None and float(portfolio_equity) > 0 and current_portfolio_exposure is not None:
+            projected_exposure = max(0.0, float(current_portfolio_exposure))
+            if intent.side == "buy":
+                projected_exposure += float(qty) * float(intent.price)
+            elif intent.side == "sell":
+                projected_exposure = max(0.0, projected_exposure - float(qty) * float(intent.price))
+            exposure_limit = float(portfolio_equity) * float(max_portfolio_exposure_pct)
+            exposure_ok = projected_exposure <= exposure_limit
+            exposure_reason = "checked"
+        else:
+            projected_exposure = None
+            exposure_limit = None
+            exposure_ok = True
+            exposure_reason = "metadata_missing"
+        checks.append(
+            {
+                "name": "max_portfolio_exposure",
+                "passed": bool(exposure_ok),
+                "reason": exposure_reason,
+                "current_portfolio_exposure": (
+                    float(current_portfolio_exposure) if current_portfolio_exposure is not None else None
+                ),
+                "projected_portfolio_exposure": (
+                    float(projected_exposure) if projected_exposure is not None else None
+                ),
+                "portfolio_equity": float(portfolio_equity) if portfolio_equity is not None else None,
+                "max_portfolio_exposure_pct": float(max_portfolio_exposure_pct),
+                "limit_value": float(exposure_limit) if exposure_limit is not None else None,
+            }
+        )
+        if not exposure_ok:
+            return self._reject(intent, "max_portfolio_exposure", checks, quality)
 
         return PreTradeDecision(
             intent_id=intent.intent_id,

@@ -17,6 +17,11 @@ class StockPosition:
     quantity: int
     price: float = 0.0
     market_value: float = 0.0
+    pnl: float | None = None
+    sellable_quantity: int | None = None
+    yesterday_quantity: int | None = None
+    quantity_unit: str = "shares"
+    sellable_source: str = "quantity"
     raw: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,6 +61,10 @@ class AccountSnapshot:
     positions: list[StockPosition] = field(default_factory=list)
     settlements: list[SettlementItem] = field(default_factory=list)
     open_orders: list[OpenOrder] = field(default_factory=list)
+    unrealized_pnl: float | None = None
+    realized_pnl: float | None = None
+    daily_pnl: float | None = None
+    pnl_source: str = "unavailable"
     checked_at: datetime = field(default_factory=datetime.utcnow)
 
     def to_dict(self) -> dict[str, Any]:
@@ -149,14 +158,22 @@ class ShioajiAccountService:
         try:
             api, _ = self._login(simulation=simulation)
             account = getattr(api, "stock_account", None)
+            positions = self.get_positions(simulation=simulation, api=api)
+            realized_pnl = self._read_realized_pnl(api, account, datetime.now().date())
+            unrealized_pnl = self._sum_unrealized_pnl(positions)
+            pnl_values = [value for value in (realized_pnl, unrealized_pnl) if value is not None]
             return AccountSnapshot(
                 simulation=bool(simulation),
                 query_ok=True,
                 stock_account=self._serialize(account),
                 available_cash=self._read_available_cash(api, account),
-                positions=self.get_positions(simulation=simulation, api=api),
+                positions=positions,
                 settlements=self.get_settlements(simulation=simulation, api=api),
                 open_orders=self.get_open_orders(simulation=simulation, api=api),
+                unrealized_pnl=unrealized_pnl,
+                realized_pnl=realized_pnl,
+                daily_pnl=float(sum(pnl_values)) if pnl_values else None,
+                pnl_source=self._pnl_source(realized_pnl=realized_pnl, unrealized_pnl=unrealized_pnl),
             )
         finally:
             self._logout(api)
@@ -167,8 +184,8 @@ class ShioajiAccountService:
             api, _ = self._login(simulation=simulation)
         try:
             account = getattr(api, "stock_account", None)
-            rows = self._call_account_api(api, "list_positions", account) or []
-            return [self._position_from_raw(item) for item in rows]
+            rows, query_unit = self._read_position_rows(api, account)
+            return [self._position_from_raw(item, query_unit=query_unit) for item in rows]
         finally:
             if own_api:
                 self._logout(api)
@@ -266,17 +283,19 @@ class ShioajiAccountService:
         return None
 
     @classmethod
-    def _call_account_api(cls, api: Any, method_name: str, account: Any):
+    def _call_account_api(cls, api: Any, method_name: str, account: Any, *, extra_kwargs: dict[str, Any] | None = None):
         method = getattr(api, method_name, None)
         if method is None:
             return None
+        extra = dict(extra_kwargs or {})
         for args, kwargs in (
             ((), {"account": account}),
             ((account,), {}),
             ((), {}),
         ):
             try:
-                return method(*args, **kwargs)
+                merged_kwargs = {**kwargs, **extra}
+                return method(*args, **merged_kwargs)
             except TypeError:
                 continue
             except Exception:
@@ -284,14 +303,165 @@ class ShioajiAccountService:
         return None
 
     @classmethod
-    def _position_from_raw(cls, raw: Any) -> StockPosition:
+    def _read_position_rows(cls, api: Any, account: Any) -> tuple[list[Any], str]:
+        share_unit = cls._resolve_unit_constant(api, "Share")
+        if share_unit is not None:
+            rows = cls._call_account_api(api, "list_positions", account, extra_kwargs={"unit": share_unit})
+            if rows is not None:
+                return list(rows or []), "Share"
+        rows = cls._call_account_api(api, "list_positions", account) or []
+        return list(rows or []), "default"
+
+    @classmethod
+    def _resolve_unit_constant(cls, api: Any, name: str) -> Any | None:
+        for source in (
+            getattr(api, "Unit", None),
+            getattr(api, "constant", None),
+            getattr(getattr(api, "constant", None), "Unit", None),
+        ):
+            value = getattr(source, name, None) if source is not None else None
+            if value is not None:
+                return value
+        try:
+            import shioaji as sj  # type: ignore
+        except Exception:
+            return name
+        return getattr(getattr(sj.constant, "Unit", None), name, name)
+
+    @classmethod
+    def _position_from_raw(cls, raw: Any, *, query_unit: str | None = None) -> StockPosition:
         data = cls._serialize(raw)
-        source = data if isinstance(data, dict) else {}
+        source = dict(data) if isinstance(data, dict) else {}
+        if query_unit:
+            source.setdefault("_query_unit", query_unit)
         symbol = str(source.get("code") or source.get("symbol") or source.get("stock_id") or "")
-        quantity = int(float(source.get("quantity") or source.get("qty") or source.get("shares") or 0))
-        price = float(source.get("price") or source.get("last_price") or source.get("pnl_price") or 0.0)
-        market_value = float(source.get("market_value") or price * quantity)
-        return StockPosition(symbol=symbol, quantity=quantity, price=price, market_value=market_value, raw=source)
+        unit = cls._position_quantity_unit(source, query_unit=query_unit)
+        raw_quantity = cls._pick_number(source, ("quantity", "qty", "shares")) or 0
+        quantity = cls._position_quantity_to_shares(raw_quantity, unit=unit)
+        raw_yesterday_quantity = cls._pick_number(
+            source,
+            ("yd_quantity", "yesterday_quantity", "yd_qty", "yesterday_qty"),
+        )
+        yesterday_quantity = (
+            cls._position_quantity_to_shares(raw_yesterday_quantity, unit=unit)
+            if raw_yesterday_quantity is not None
+            else None
+        )
+        explicit_sellable = cls._pick_number(
+            source,
+            (
+                "sellable_quantity",
+                "sellable_qty",
+                "available_quantity",
+                "available_qty",
+                "available_shares",
+                "sellable_shares",
+            ),
+        )
+        if explicit_sellable is not None:
+            sellable_quantity = cls._position_quantity_to_shares(explicit_sellable, unit=unit)
+            sellable_source = "broker_sellable_quantity"
+        elif yesterday_quantity is not None:
+            sellable_quantity = int(yesterday_quantity)
+            sellable_source = "yd_quantity"
+        else:
+            sellable_quantity = int(quantity)
+            sellable_source = "quantity"
+        price = cls._pick_number(source, ("last_price", "price", "pnl_price", "close")) or 0.0
+        market_value = cls._pick_number(source, ("market_value", "value", "amount")) or price * quantity
+        pnl = cls._pick_number(source, ("pnl", "profit_loss", "unrealized_pnl", "unrealized_profit_loss"))
+        return StockPosition(
+            symbol=symbol,
+            quantity=quantity,
+            price=price,
+            market_value=market_value,
+            pnl=pnl,
+            sellable_quantity=sellable_quantity,
+            yesterday_quantity=yesterday_quantity,
+            quantity_unit="shares",
+            sellable_source=sellable_source,
+            raw=source,
+        )
+
+    @classmethod
+    def _position_quantity_unit(cls, source: dict[str, Any], *, query_unit: str | None = None) -> str:
+        raw = str(
+            source.get("unit")
+            or source.get("quantity_unit")
+            or source.get("order_lot")
+            or source.get("_query_unit")
+            or query_unit
+            or ""
+        ).strip()
+        if raw.lower() in {"common", "unit.common"}:
+            return "lots"
+        if raw.lower() in {"share", "shares", "unit.share"}:
+            return "shares"
+        return "shares"
+
+    @staticmethod
+    def _position_quantity_to_shares(value: Any, *, unit: str) -> int:
+        number = ShioajiAccountService._coerce_number(value) or 0.0
+        multiplier = 1000 if unit == "lots" else 1
+        return max(0, int(number * multiplier))
+
+    @classmethod
+    def _sum_unrealized_pnl(cls, positions: list[StockPosition]) -> float | None:
+        values = [
+            float(item.pnl)
+            for item in positions
+            if item.pnl is not None
+        ]
+        return float(sum(values)) if values else None
+
+    @classmethod
+    def _read_realized_pnl(cls, api: Any, account: Any, trade_date) -> float | None:
+        day = trade_date.isoformat()
+        summary_method = getattr(api, "list_profit_loss_summary", None)
+        if callable(summary_method):
+            for args, kwargs in (
+                ((account,), {"begin_date": day, "end_date": day}),
+                ((), {"account": account, "begin_date": day, "end_date": day}),
+                ((account, day, day), {}),
+            ):
+                try:
+                    payload = summary_method(*args, **kwargs)
+                except TypeError:
+                    continue
+                except Exception:
+                    payload = None
+                value = cls._pick_number(payload, ("total_pnl", "pnl", "profit_loss", "realized_pnl"))
+                if value is not None:
+                    return float(value)
+
+        method = getattr(api, "list_profit_loss", None)
+        if not callable(method):
+            return None
+        for args, kwargs in (
+            ((account,), {"begin_date": day, "end_date": day}),
+            ((), {"account": account, "begin_date": day, "end_date": day}),
+            ((account, day, day), {}),
+        ):
+            try:
+                payload = method(*args, **kwargs)
+            except TypeError:
+                continue
+            except Exception:
+                payload = None
+            values = cls._pick_numbers(payload, ("pnl", "profit_loss", "realized_pnl"))
+            if values:
+                return float(sum(values))
+        return None
+
+    @staticmethod
+    def _pnl_source(*, realized_pnl: float | None, unrealized_pnl: float | None) -> str:
+        if realized_pnl is not None and unrealized_pnl is not None:
+            return "realized_today_plus_unrealized_positions"
+        if realized_pnl is not None:
+            return "realized_today"
+        if unrealized_pnl is not None:
+            return "unrealized_positions"
+        return "unavailable"
 
     @classmethod
     def _settlement_from_raw(cls, raw: Any) -> SettlementItem:
@@ -319,8 +489,9 @@ class ShioajiAccountService:
     @classmethod
     def _pick_number(cls, payload: Any, keys: tuple[str, ...]) -> float | None:
         data = cls._serialize(payload)
-        if isinstance(data, (int, float)):
-            return float(data)
+        parsed = cls._coerce_number(data)
+        if parsed is not None:
+            return parsed
         if isinstance(data, list):
             for item in data:
                 value = cls._pick_number(item, keys)
@@ -328,7 +499,34 @@ class ShioajiAccountService:
                     return value
         if isinstance(data, dict):
             for key in keys:
-                value = data.get(key)
-                if isinstance(value, (int, float)):
-                    return float(value)
+                value = cls._coerce_number(data.get(key))
+                if value is not None:
+                    return value
         return None
+
+    @classmethod
+    def _pick_numbers(cls, payload: Any, keys: tuple[str, ...]) -> list[float]:
+        data = cls._serialize(payload)
+        if isinstance(data, list):
+            values: list[float] = []
+            for item in data:
+                value = cls._pick_number(item, keys)
+                if value is not None:
+                    values.append(float(value))
+            return values
+        value = cls._pick_number(data, keys)
+        return [float(value)] if value is not None else []
+
+    @staticmethod
+    def _coerce_number(value: Any) -> float | None:
+        if isinstance(value, (int, float)):
+            return float(value)
+        if value is None:
+            return None
+        text = str(value).strip().replace(",", "")
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None

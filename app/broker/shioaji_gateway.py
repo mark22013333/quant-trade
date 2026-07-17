@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from datetime import datetime, time, timedelta
+import time as time_module
+from collections import deque
+from datetime import date, datetime, time, timedelta
 from dataclasses import dataclass
 from typing import Any
 
@@ -385,11 +387,13 @@ class ShioajiGateway:
         avg_volume_20: float | None = None,
         portfolio_equity: float | None = None,
         current_position_value: float = 0.0,
+        current_portfolio_exposure: float | None = None,
         daily_pnl: float = 0.0,
         max_price_deviation_ticks: int = 3,
         max_price_deviation_pct: float = 0.01,
         min_avg_volume_20: float = 500_000.0,
         max_single_position_pct: float = 0.10,
+        max_portfolio_exposure_pct: float = 0.95,
         max_daily_loss_pct: float = 0.02,
     ) -> dict[str, Any]:
         """
@@ -464,24 +468,34 @@ class ShioajiGateway:
             settlement_adjusted_cash = float(first_available_cash) - max(0.0, float(pending_settlement_amount or 0.0))
             if quantity is not None:
                 approved_qty = int(quantity)
-                order_value = float(approved_qty) * float(current_price)
+                approved_shares = self._stock_order_quantity_to_shares(approved_qty, use_odd_lot=use_odd_lot)
+                order_value = float(approved_shares) * float(current_price)
                 estimated_total_cost = estimate_buy_total_cost(order_value)
                 capital_reason = "ok" if approved_qty > 0 and estimated_total_cost <= settlement_adjusted_cash else "capital_guard_rejected"
                 capital_ok = approved_qty > 0 and estimated_total_cost <= settlement_adjusted_cash
-            else:
+            elif use_odd_lot:
                 check = enforce_absolute_capital_guard(available_cash=settlement_adjusted_cash, current_price=float(current_price))
                 approved_qty = int(check.qty)
+                approved_shares = approved_qty
                 estimated_total_cost = float(check.estimated_total_cost)
                 capital_reason = str(check.reason)
                 capital_ok = bool(check.accepted)
+            else:
+                one_lot_cost = estimate_buy_total_cost(float(current_price) * 1000.0)
+                approved_qty = int(settlement_adjusted_cash // one_lot_cost) if one_lot_cost > 0 else 0
+                approved_shares = self._stock_order_quantity_to_shares(approved_qty, use_odd_lot=use_odd_lot)
+                estimated_total_cost = estimate_buy_total_cost(float(approved_shares) * float(current_price))
+                capital_ok = approved_qty > 0 and estimated_total_cost <= settlement_adjusted_cash
+                capital_reason = "ok" if capital_ok else "capital_guard_rejected"
         else:
             first_available_cash = None
             first_cash_source = "sell_order_no_cash_required"
             settlement_adjusted_cash = None
             approved_qty = int(quantity or 0)
+            approved_shares = self._stock_order_quantity_to_shares(approved_qty, use_odd_lot=use_odd_lot)
             estimated_total_cost = 0.0
             capital_reason = "sell_order_no_cash_required"
-            capital_ok = approved_qty > 0
+            capital_ok = approved_shares > 0
         checks.append(
             {
                 "name": "capital_guard_first",
@@ -490,6 +504,7 @@ class ShioajiGateway:
                 "cash_source": first_cash_source,
                 "settlement_adjusted_cash": float(settlement_adjusted_cash) if settlement_adjusted_cash is not None else None,
                 "qty": int(approved_qty),
+                "share_quantity": int(approved_shares),
                 "estimated_total_cost": float(estimated_total_cost),
                 "reason": capital_reason,
             }
@@ -530,7 +545,7 @@ class ShioajiGateway:
             raise PreTradeCheckError("pre-trade check rejected: duplicate_order")
 
         if normalized_side == "sell":
-            position_ok = position_quantity is None or int(position_quantity) >= int(approved_qty)
+            position_ok = position_quantity is None or int(position_quantity) >= int(approved_shares)
         else:
             position_ok = True
         checks.append(
@@ -539,6 +554,7 @@ class ShioajiGateway:
                 "passed": bool(position_ok),
                 "position_quantity": int(position_quantity) if position_quantity is not None else None,
                 "requested_quantity": int(approved_qty),
+                "requested_shares": int(approved_shares),
             }
         )
         if not position_ok:
@@ -594,9 +610,9 @@ class ShioajiGateway:
         if portfolio_equity is not None and float(portfolio_equity) > 0:
             projected_position_value = max(0.0, float(current_position_value or 0.0))
             if normalized_side == "buy":
-                projected_position_value += float(approved_qty) * float(current_price)
+                projected_position_value += float(approved_shares) * float(current_price)
             else:
-                projected_position_value = max(0.0, projected_position_value - float(approved_qty) * float(current_price))
+                projected_position_value = max(0.0, projected_position_value - float(approved_shares) * float(current_price))
             single_position_ok = projected_position_value <= float(portfolio_equity) * float(max_single_position_pct)
         else:
             projected_position_value = None
@@ -627,10 +643,45 @@ class ShioajiGateway:
         if not daily_loss_ok:
             raise PreTradeCheckError("pre-trade check rejected: daily_loss_limit")
 
+        if portfolio_equity is not None and float(portfolio_equity) > 0 and current_portfolio_exposure is not None:
+            projected_portfolio_exposure = max(0.0, float(current_portfolio_exposure))
+            if normalized_side == "buy":
+                projected_portfolio_exposure += float(approved_shares) * float(current_price)
+            else:
+                projected_portfolio_exposure = max(
+                    0.0,
+                    projected_portfolio_exposure - float(approved_shares) * float(current_price),
+                )
+            max_exposure_value = float(portfolio_equity) * float(max_portfolio_exposure_pct)
+            portfolio_exposure_ok = projected_portfolio_exposure <= max_exposure_value
+            portfolio_exposure_reason = "checked"
+        else:
+            projected_portfolio_exposure = None
+            max_exposure_value = None
+            portfolio_exposure_ok = True
+            portfolio_exposure_reason = "metadata_missing"
+        checks.append(
+            {
+                "name": "max_portfolio_exposure",
+                "passed": bool(portfolio_exposure_ok),
+                "reason": portfolio_exposure_reason,
+                "portfolio_equity": float(portfolio_equity) if portfolio_equity is not None else None,
+                "current_portfolio_exposure": (
+                    float(current_portfolio_exposure) if current_portfolio_exposure is not None else None
+                ),
+                "projected_portfolio_exposure": (
+                    float(projected_portfolio_exposure) if projected_portfolio_exposure is not None else None
+                ),
+                "max_portfolio_exposure_pct": float(max_portfolio_exposure_pct),
+                "limit_value": float(max_exposure_value) if max_exposure_value is not None else None,
+            }
+        )
+        if not portfolio_exposure_ok:
+            raise PreTradeCheckError("pre-trade check rejected: max_portfolio_exposure")
+
         checks.extend(
             [
                 {"name": "position_limit", "passed": bool(position_ok), "reason": "checked"},
-                {"name": "max_portfolio_exposure", "passed": True, "reason": "not_enforced"},
                 {"name": "disposition_stock_block", "passed": bool(disposition_ok), "reason": "checked"},
                 {"name": "liquidity_threshold", "passed": bool(liquidity_ok), "reason": "checked"},
             ]
@@ -657,6 +708,7 @@ class ShioajiGateway:
             "side": normalized_side,
             "price": float(current_price),
             "qty": int(approved_qty),
+            "share_quantity": int(approved_shares),
             "estimated_total_cost": float(estimated_total_cost),
             "available_cash_before": float(first_available_cash) if first_available_cash is not None else None,
             "available_cash_before_order": float(second_available_cash) if second_available_cash is not None else None,
@@ -812,7 +864,20 @@ class ShioajiGateway:
                     avg_volume_20=self._optional_float(metadata.get("avg_volume_20")),
                     portfolio_equity=self._optional_float(metadata.get("portfolio_equity")),
                     current_position_value=float(metadata.get("current_position_value") or 0.0),
+                    current_portfolio_exposure=self._metadata_portfolio_exposure(metadata),
                     daily_pnl=float(metadata.get("daily_pnl") or 0.0),
+                    max_single_position_pct=self._positive_float_or_default(
+                        metadata.get("max_single_position_pct"),
+                        0.10,
+                    ),
+                    max_portfolio_exposure_pct=self._positive_float_or_default(
+                        metadata.get("max_portfolio_exposure_pct"),
+                        0.95,
+                    ),
+                    max_daily_loss_pct=self._positive_float_or_default(
+                        metadata.get("max_daily_loss_pct"),
+                        0.02,
+                    ),
                 )
             pretrade = PreTradeDecision(
                 intent_id=intent.intent_id,
@@ -872,6 +937,23 @@ class ShioajiGateway:
         if value is None or value == "":
             return None
         return int(value)
+
+    @staticmethod
+    def _stock_order_quantity_to_shares(quantity: int | float | None, *, use_odd_lot: bool) -> int:
+        qty = max(0, int(quantity or 0))
+        return qty if use_odd_lot else qty * 1000
+
+    def _metadata_portfolio_exposure(self, metadata: dict[str, Any]) -> float | None:
+        exposure = self._optional_float(metadata.get("current_portfolio_exposure"))
+        if exposure is None:
+            exposure = self._optional_float(metadata.get("portfolio_exposure"))
+        return exposure
+
+    def _positive_float_or_default(self, value: Any, default: float) -> float:
+        parsed = self._optional_float(value)
+        if parsed is None or parsed <= 0:
+            return float(default)
+        return float(parsed)
 
     def execute_stock_order_in_thread(
         self,

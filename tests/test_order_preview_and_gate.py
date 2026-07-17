@@ -38,6 +38,45 @@ def test_live_preview_requires_manual_confirmation_and_metadata():
     assert accepted.accepted is True
 
 
+def test_live_preview_rejects_tracking_metadata_mismatch():
+    service = OrderPreviewService(ttl_seconds=120)
+    preview_intent = OrderIntent(
+        source="web",
+        environment="live",
+        symbol="2330",
+        side="buy",
+        price=100,
+        quantity=1,
+        strategy_name="daily_radar",
+        signal_id="radar-2330",
+        metadata={"strategy_version": "2026-06"},
+    )
+    preview = service.create_preview(
+        intent=preview_intent,
+        estimated_total_cost=100,
+        available_cash=1000,
+        position_before=0,
+        strategy_version="2026-06",
+        signal_id="radar-2330",
+    )
+    changed_intent = OrderIntent(
+        source="web",
+        environment="live",
+        symbol="2330",
+        side="buy",
+        price=100,
+        quantity=1,
+        strategy_name="manual",
+        signal_id="manual",
+        metadata={"strategy_version": "manual"},
+    )
+
+    decision = service.approve(preview_id=preview.preview_id, intent=changed_intent, manual_confirmed=True)
+
+    assert decision.accepted is False
+    assert decision.reason == "live_tracking_metadata_mismatch"
+
+
 def test_preview_expired_rejects_order():
     service = OrderPreviewService(ttl_seconds=1)
     intent = OrderIntent(source="web", environment="simulation", symbol="2330", side="buy", price=100, quantity=1)
@@ -56,7 +95,15 @@ def test_preview_expired_rejects_order():
 
 def test_preview_approval_can_rehydrate_from_repository():
     original = OrderPreviewService(ttl_seconds=120)
-    intent = OrderIntent(source="web", environment="simulation", symbol="2330", side="buy", price=100, quantity=1)
+    intent = OrderIntent(
+        source="web",
+        environment="simulation",
+        symbol="2330",
+        side="buy",
+        price=100,
+        quantity=1,
+        order_lot="Common",
+    )
     preview = original.create_preview(intent=intent, estimated_total_cost=100, available_cash=1000, position_before=0)
 
     class FakeRepo:
@@ -89,6 +136,7 @@ def test_preview_approval_can_rehydrate_from_repository():
 
     assert decision.accepted is True
     assert decision.reason == "ok"
+    assert preview.to_dict()["order_lot"] == "Common"
     assert repo.decisions[-1]["accepted"] is True
 
 
@@ -102,6 +150,39 @@ def test_preview_approval_rejects_intent_mismatch_in_simulation():
         position_before=0,
     )
     changed_intent = OrderIntent(source="web", environment="simulation", symbol="2317", side="buy", price=100, quantity=1)
+
+    decision = service.approve(preview_id=preview.preview_id, intent=changed_intent, manual_confirmed=True)
+
+    assert decision.accepted is False
+    assert decision.reason == "preview_intent_mismatch"
+
+
+def test_preview_approval_rejects_order_lot_mismatch():
+    service = OrderPreviewService(ttl_seconds=120)
+    preview_intent = OrderIntent(
+        source="web",
+        environment="simulation",
+        symbol="2330",
+        side="buy",
+        price=100,
+        quantity=1,
+        order_lot="Common",
+    )
+    preview = service.create_preview(
+        intent=preview_intent,
+        estimated_total_cost=100,
+        available_cash=1000,
+        position_before=0,
+    )
+    changed_intent = OrderIntent(
+        source="web",
+        environment="simulation",
+        symbol="2330",
+        side="buy",
+        price=100,
+        quantity=1,
+        order_lot="IntradayOdd",
+    )
 
     decision = service.approve(preview_id=preview.preview_id, intent=changed_intent, manual_confirmed=True)
 

@@ -7340,6 +7340,22 @@ class TradingRepository:
             for row in rows
         ]
 
+    def expire_order_preview_records(self, *, now: datetime | None = None) -> int:
+        current = now or datetime.utcnow()
+        rows = list(
+            self.session.execute(
+                select(OrderPreviewRecord).where(
+                    OrderPreviewRecord.status.in_(("created", "decision_only")),
+                    OrderPreviewRecord.expires_at <= current,
+                )
+            ).scalars()
+        )
+        for row in rows:
+            row.status = "expired"
+            row.reason = "preview_expired"
+            row.decided_at = current
+        return len(rows)
+
     def list_recent_promotion_gate_records(self, *, limit: int = 20) -> list[dict]:
         rows = self.session.execute(
             select(PromotionGateRecord).order_by(PromotionGateRecord.created_at.desc()).limit(max(1, int(limit)))

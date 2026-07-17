@@ -18,6 +18,7 @@ class OrderPreview:
     side: str
     price: float
     quantity: int
+    order_lot: str
     estimated_total_cost: float
     available_cash: float | None
     position_before: int
@@ -72,6 +73,7 @@ class OrderPreviewService:
             side=intent.side,
             price=float(intent.price),
             quantity=int(intent.quantity or 0),
+            order_lot=str(intent.order_lot),
             estimated_total_cost=float(estimated_total_cost),
             available_cash=available_cash,
             position_before=int(position_before),
@@ -118,6 +120,7 @@ class OrderPreviewService:
             ("side", preview.side),
             ("price", preview.price),
             ("quantity", preview.quantity),
+            ("order_lot", preview.order_lot),
         ):
             actual = getattr(intent, key)
             if key == "price":
@@ -133,6 +136,20 @@ class OrderPreviewService:
             if not intent.strategy_name or not intent.signal_id or not intent.metadata.get("strategy_version"):
                 return self._record_decision(
                     PreviewDecision(preview_id=preview.preview_id, accepted=False, reason="live_metadata_required"),
+                    repository=repo,
+                )
+            tracking_matches = (
+                str(intent.strategy_name) == str(preview.strategy_name)
+                and str(intent.signal_id) == str(preview.signal_id)
+                and str(intent.metadata.get("strategy_version") or "") == str(preview.strategy_version)
+            )
+            if not tracking_matches:
+                return self._record_decision(
+                    PreviewDecision(
+                        preview_id=preview.preview_id,
+                        accepted=False,
+                        reason="live_tracking_metadata_mismatch",
+                    ),
                     repository=repo,
                 )
         return self._record_decision(
@@ -162,6 +179,7 @@ class OrderPreviewService:
                 side=str(record["side"]),
                 price=float(record["price"]),
                 quantity=int(record["quantity"]),
+                order_lot=str((record.get("preview") or {}).get("order_lot") or (record.get("intent") or {}).get("order_lot") or "IntradayOdd"),
                 estimated_total_cost=float(record.get("estimated_total_cost") or 0.0),
                 available_cash=(
                     float(record["available_cash"])
