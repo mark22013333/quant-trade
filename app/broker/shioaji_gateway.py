@@ -38,6 +38,450 @@ class ShioajiConfig:
     live_order_nonce: str = ""
 
 
+class StreamingQuoteBuffer:
+    """Bounded in-memory quote buffer for stock tick/bidask callbacks."""
+
+    def __init__(
+        self,
+        *,
+        normalize_symbol: Any,
+        max_ticks_per_symbol: int = 200,
+        max_bidasks_per_symbol: int = 100,
+        max_events: int = 100,
+    ):
+        self._normalize_symbol = normalize_symbol
+        self._max_ticks_per_symbol = max(1, int(max_ticks_per_symbol))
+        self._max_bidasks_per_symbol = max(1, int(max_bidasks_per_symbol))
+        self._latest: dict[str, dict[str, Any]] = {}
+        self._ticks: dict[str, deque[dict[str, Any]]] = {}
+        self._bidasks: dict[str, deque[dict[str, Any]]] = {}
+        self._tick_totals: dict[str, int] = {}
+        self._bidask_totals: dict[str, int] = {}
+        self._events: deque[dict[str, Any]] = deque(maxlen=max(1, int(max_events)))
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        try:
+            if value is None or value == "":
+                return None
+            return float(value)
+        except Exception:
+            return None
+
+    @classmethod
+    def _first_float(cls, values: Any) -> float | None:
+        if isinstance(values, (list, tuple)):
+            for item in values:
+                value = cls._safe_float(item)
+                if value is not None and value > 0:
+                    return value
+            return None
+        value = cls._safe_float(values)
+        return value if value is not None and value > 0 else None
+
+    @staticmethod
+    def _checked_at_from_payload(payload: dict[str, Any]) -> str:
+        raw_dt = payload.get("datetime") or payload.get("ts")
+        if isinstance(raw_dt, datetime):
+            return raw_dt.isoformat(timespec="seconds")
+        if raw_dt:
+            return str(raw_dt)
+        return datetime.now().isoformat(timespec="seconds")
+
+    def add_tick(self, raw: Any) -> str | None:
+        data = raw if isinstance(raw, dict) else {}
+        code = self._normalize_symbol(str(data.get("code") or ""))
+        price = self._safe_float(data.get("close"))
+        if not code or price is None or price <= 0:
+            return None
+        item = {
+            "symbol": code,
+            "price": float(price),
+            "source": "shioaji_streaming_tick",
+            "checked_at": self._checked_at_from_payload(data),
+            "open": self._safe_float(data.get("open")),
+            "high": self._safe_float(data.get("high")),
+            "low": self._safe_float(data.get("low")),
+            "close": self._safe_float(data.get("close")),
+            "volume": self._safe_float(data.get("volume")),
+            "total_volume": self._safe_float(data.get("total_volume")),
+            "change_price": self._safe_float(data.get("price_chg") or data.get("change_price")),
+            "change_rate": self._safe_float(data.get("pct_chg") or data.get("change_rate")),
+            "raw_tick": raw,
+            "quote_buffer_status": "streaming_tick",
+        }
+        with self._lock:
+            previous = self._latest.get(code, {})
+            merged = {**previous, **{key: value for key, value in item.items() if value not in (None, "")}}
+            if previous.get("raw_bidask") is not None:
+                merged["raw_bidask"] = previous.get("raw_bidask")
+            self._ticks.setdefault(code, deque(maxlen=self._max_ticks_per_symbol)).append(dict(item))
+            self._tick_totals[code] = int(self._tick_totals.get(code, 0)) + 1
+            self._latest[code] = self._with_symbol_stats(code, merged)
+        return code
+
+    def add_bidask(self, raw: Any) -> str | None:
+        data = raw if isinstance(raw, dict) else {}
+        code = self._normalize_symbol(str(data.get("code") or ""))
+        bid_price = self._first_float(data.get("bid_price"))
+        ask_price = self._first_float(data.get("ask_price"))
+        price = None
+        if bid_price is not None and ask_price is not None:
+            price = (bid_price + ask_price) / 2.0
+        elif ask_price is not None:
+            price = ask_price
+        elif bid_price is not None:
+            price = bid_price
+        if not code or price is None or price <= 0:
+            return None
+        item = {
+            "symbol": code,
+            "price": float(price),
+            "source": "shioaji_streaming_bidask",
+            "checked_at": self._checked_at_from_payload(data),
+            "buy_price": bid_price,
+            "sell_price": ask_price,
+            "raw_bidask": raw,
+            "quote_buffer_status": "streaming_bidask",
+        }
+        with self._lock:
+            previous = self._latest.get(code, {})
+            merged = dict(previous)
+            if previous.get("source") != "shioaji_streaming_tick":
+                merged.update({key: value for key, value in item.items() if value not in (None, "")})
+            else:
+                merged.update(
+                    {
+                        key: value
+                        for key, value in item.items()
+                        if key in {"buy_price", "sell_price", "raw_bidask"} and value not in (None, "")
+                    }
+                )
+            self._bidasks.setdefault(code, deque(maxlen=self._max_bidasks_per_symbol)).append(dict(item))
+            self._bidask_totals[code] = int(self._bidask_totals.get(code, 0)) + 1
+            self._latest[code] = self._with_symbol_stats(code, merged)
+        return code
+
+    def record_event(self, resp_code: Any, event_code: Any, info: Any, event: Any) -> None:
+        with self._lock:
+            self._events.append(
+                {
+                    "resp_code": resp_code,
+                    "event_code": event_code,
+                    "info": str(info or ""),
+                    "event": str(event or ""),
+                    "checked_at": datetime.now().isoformat(timespec="seconds"),
+                }
+            )
+            for symbol, item in list(self._latest.items()):
+                self._latest[symbol] = self._with_symbol_stats(symbol, item)
+
+    def latest_count(self, symbols: list[str] | tuple[str, ...]) -> int:
+        clean = {self._normalize_symbol(str(symbol or "")) for symbol in symbols}
+        clean.discard("")
+        with self._lock:
+            return sum(1 for symbol in clean if symbol in self._latest)
+
+    def snapshot(self, symbols: list[str] | tuple[str, ...] | None = None) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            if symbols is None:
+                selected = sorted(self._latest)
+            else:
+                selected = []
+                for symbol in symbols:
+                    code = self._normalize_symbol(str(symbol or ""))
+                    if code and code not in selected:
+                        selected.append(code)
+            return {symbol: dict(self._latest[symbol]) for symbol in selected if symbol in self._latest}
+
+    def stats(self, symbols: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
+        with self._lock:
+            selected = (
+                sorted(self._latest)
+                if symbols is None
+                else [self._normalize_symbol(str(symbol or "")) for symbol in symbols if self._normalize_symbol(str(symbol or ""))]
+            )
+            selected = list(dict.fromkeys(selected))
+            tick_counts = {symbol: int(self._tick_totals.get(symbol, 0)) for symbol in selected}
+            bidask_counts = {symbol: int(self._bidask_totals.get(symbol, 0)) for symbol in selected}
+            retained_tick_counts = {symbol: len(self._ticks.get(symbol, ())) for symbol in selected}
+            retained_bidask_counts = {symbol: len(self._bidasks.get(symbol, ())) for symbol in selected}
+            return {
+                "symbols": [symbol for symbol in selected if symbol in self._latest],
+                "latest_count": sum(1 for symbol in selected if symbol in self._latest),
+                "tick_count": sum(tick_counts.values()),
+                "bidask_count": sum(bidask_counts.values()),
+                "retained_tick_count": sum(retained_tick_counts.values()),
+                "retained_bidask_count": sum(retained_bidask_counts.values()),
+                "event_count": len(self._events),
+                "tick_counts": tick_counts,
+                "bidask_counts": bidask_counts,
+                "retained_tick_counts": retained_tick_counts,
+                "retained_bidask_counts": retained_bidask_counts,
+                "last_event": dict(self._events[-1]) if self._events else None,
+            }
+
+    def _with_symbol_stats(self, symbol: str, item: dict[str, Any]) -> dict[str, Any]:
+        enriched = dict(item)
+        enriched["quote_buffer_tick_count"] = int(self._tick_totals.get(symbol, 0))
+        enriched["quote_buffer_bidask_count"] = int(self._bidask_totals.get(symbol, 0))
+        enriched["quote_buffer_retained_tick_count"] = len(self._ticks.get(symbol, ()))
+        enriched["quote_buffer_retained_bidask_count"] = len(self._bidasks.get(symbol, ()))
+        enriched["quote_buffer_event_count"] = len(self._events)
+        if self._events:
+            enriched["quote_buffer_last_event"] = dict(self._events[-1])
+        return enriched
+
+
+class ShioajiStreamingQuoteManager:
+    """Manage Shioaji stock quote subscriptions and reconnect-aware status."""
+
+    def __init__(
+        self,
+        *,
+        api: Any,
+        normalize_symbol: Any,
+        get_stock_contract: Any,
+        serialize: Any,
+        resolve_constant: Any,
+        include_bidask: bool = True,
+        subscribe_batch_size: int = 45,
+        subscribe_batch_pause_seconds: float = 5.0,
+        max_ticks_per_symbol: int = 200,
+        max_bidasks_per_symbol: int = 100,
+    ):
+        self.api = api
+        self.quote = getattr(api, "quote", None)
+        self._normalize_symbol = normalize_symbol
+        self._get_stock_contract = get_stock_contract
+        self._serialize = serialize
+        self._resolve_constant = resolve_constant
+        self._include_bidask = bool(include_bidask)
+        self._subscribe_batch_size = max(1, int(subscribe_batch_size or 1))
+        self._subscribe_batch_pause_seconds = max(0.0, float(subscribe_batch_pause_seconds or 0.0))
+        self.buffer = StreamingQuoteBuffer(
+            normalize_symbol=normalize_symbol,
+            max_ticks_per_symbol=max_ticks_per_symbol,
+            max_bidasks_per_symbol=max_bidasks_per_symbol,
+        )
+        self._event = threading.Event()
+        self._lock = threading.RLock()
+        self._contracts: dict[str, Any] = {}
+        self._known_symbols: set[str] = set()
+        self._subscriptions: list[tuple[str, Any, Any]] = []
+        self._callback_installed = False
+        self._event_callback_method: str | None = None
+        self._state = "idle"
+        self._connection_status = "not_started"
+        self._started_at: str | None = None
+        self._stopped_at: str | None = None
+        self._last_heartbeat_at: str | None = None
+        self._last_reconnect_at: str | None = None
+        self._last_resubscribe_at: str | None = None
+        self._reconnect_count = 0
+        self._disconnect_count = 0
+        self._resubscribe_count = 0
+        self._subscription_call_count = 0
+
+    @staticmethod
+    def _now() -> str:
+        return datetime.now().isoformat(timespec="seconds")
+
+    @staticmethod
+    def _event_code_int(value: Any) -> int | None:
+        try:
+            return int(value)
+        except Exception:
+            return None
+
+    def _quote_types(self) -> tuple[Any, Any]:
+        try:
+            import shioaji as sj
+        except Exception:  # noqa: BLE001
+            sj = None
+        tick_type = self._resolve_constant(sj, "QuoteType", "Tick", "Tick")
+        bidask_type = self._resolve_constant(sj, "QuoteType", "BidAsk", "BidAsk")
+        return tick_type, bidask_type
+
+    def _install_callbacks(self) -> None:
+        if self.quote is None:
+            raise RuntimeError("shioaji quote API is unavailable")
+        if self._callback_installed:
+            return
+
+        def update_tick(tick: Any) -> None:
+            raw = self._serialize(tick)
+            if self.buffer.add_tick(raw):
+                self._event.set()
+
+        def update_bidask(bidask: Any) -> None:
+            raw = self._serialize(bidask)
+            if self.buffer.add_bidask(raw):
+                self._event.set()
+
+        tick_callback = lambda _exchange, tick: update_tick(tick)  # noqa: E731
+        bidask_callback = lambda _exchange, bidask: update_bidask(bidask)  # noqa: E731
+        tick_setter = getattr(self.quote, "set_on_tick_stk_v1_callback", None)
+        bidask_setter = getattr(self.quote, "set_on_bidask_stk_v1_callback", None)
+        if callable(tick_setter):
+            tick_setter(tick_callback)
+        if self._include_bidask and callable(bidask_setter):
+            bidask_setter(bidask_callback)
+        self._event_callback_method = ShioajiGateway._set_quote_event_callback(self.quote, self._handle_quote_event)
+        self._callback_installed = True
+
+    def _handle_quote_event(self, resp_code: Any, event_code: Any, info: Any, event_name: Any) -> None:
+        self.buffer.record_event(resp_code, event_code, info, event_name)
+        code = self._event_code_int(event_code)
+        should_resubscribe = False
+        with self._lock:
+            if code == 0:
+                self._connection_status = "connected"
+                self._last_heartbeat_at = self._now()
+            elif code == 1:
+                self._connection_status = "connected"
+            elif code == 2:
+                self._connection_status = "disconnected"
+                self._disconnect_count += 1
+            elif code == 3:
+                self._connection_status = "reconnecting"
+            elif code == 4:
+                self._connection_status = "connected"
+                self._last_reconnect_at = self._now()
+                self._reconnect_count += 1
+                should_resubscribe = self._state == "active" and bool(self._subscriptions)
+        if should_resubscribe:
+            self.resubscribe_all(reason="reconnected")
+
+    def start(self, symbols: list[str] | tuple[str, ...]) -> None:
+        if self.quote is None:
+            raise RuntimeError("shioaji quote API is unavailable")
+        self._install_callbacks()
+        subscribe = getattr(self.quote, "subscribe", None)
+        if not callable(subscribe):
+            raise RuntimeError("shioaji quote.subscribe API is unavailable")
+        tick_type, bidask_type = self._quote_types()
+        clean_symbols: list[str] = []
+        for symbol in symbols:
+            code = self._normalize_symbol(str(symbol or ""))
+            if code and code not in clean_symbols:
+                clean_symbols.append(code)
+        with self._lock:
+            if self._state == "idle":
+                self._started_at = self._now()
+                self._stopped_at = None
+            self._state = "active"
+            if self._connection_status == "not_started":
+                self._connection_status = "connected"
+            self._known_symbols.update(clean_symbols)
+        total_calls = len([symbol for symbol in clean_symbols if symbol not in self._contracts]) * (2 if self._include_bidask else 1)
+        for symbol in clean_symbols:
+            if symbol in self._contracts:
+                continue
+            contract = self._get_stock_contract(symbol)
+            self._contracts[symbol] = contract
+            self._subscribe(symbol, contract, tick_type, total_calls=total_calls, record=True)
+            if self._include_bidask:
+                self._subscribe(symbol, contract, bidask_type, total_calls=total_calls, record=True)
+
+    def stop(self) -> None:
+        if self.quote is None:
+            with self._lock:
+                self._state = "stopped"
+                self._stopped_at = self._now()
+            return
+        unsubscribe = getattr(self.quote, "unsubscribe", None)
+        subscriptions = list(self._subscriptions)
+        if callable(unsubscribe):
+            for _symbol, contract, quote_type in subscriptions:
+                try:
+                    unsubscribe(contract, quote_type=quote_type)
+                except Exception:
+                    continue
+        with self._lock:
+            self._subscriptions.clear()
+            self._contracts.clear()
+            self._state = "stopped"
+            self._stopped_at = self._now()
+
+    def resubscribe_all(self, *, reason: str = "manual") -> None:
+        if self.quote is None:
+            return
+        subscribe = getattr(self.quote, "subscribe", None)
+        if not callable(subscribe):
+            return
+        subscriptions = list(self._subscriptions)
+        if not subscriptions:
+            return
+        with self._lock:
+            self._resubscribe_count += 1
+            self._last_resubscribe_at = self._now()
+            self._connection_status = "connected"
+        total_calls = len(subscriptions)
+        for index, (_symbol, contract, quote_type) in enumerate(subscriptions, start=1):
+            try:
+                subscribe(contract, quote_type=quote_type)
+            except Exception as exc:  # noqa: BLE001
+                self.buffer.record_event("error", "resubscribe_failed", f"{reason}:{type(exc).__name__}", "quote")
+                continue
+            self._pause_for_quote_rate_limit(index, total_calls=total_calls)
+
+    def wait_until_ready(self, symbols: list[str] | tuple[str, ...], timeout: float) -> None:
+        clean_symbols = [self._normalize_symbol(str(symbol or "")) for symbol in symbols]
+        clean_symbols = [symbol for symbol in dict.fromkeys(clean_symbols) if symbol]
+        deadline = time_module.monotonic() + max(0.0, float(timeout or 0.0))
+        while self.buffer.latest_count(clean_symbols) < len(clean_symbols) and time_module.monotonic() < deadline:
+            self._event.wait(timeout=min(0.2, max(0.0, deadline - time_module.monotonic())))
+            self._event.clear()
+
+    def snapshot(self, symbols: list[str] | tuple[str, ...] | None = None) -> dict[str, dict[str, Any]]:
+        output = self.buffer.snapshot(symbols)
+        buffer_stats = self.buffer.stats(symbols)
+        manager_status = self.status()
+        for item in output.values():
+            item["quote_buffer"] = buffer_stats
+            item["quote_manager"] = manager_status
+        return output
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            subscribed_symbols = sorted(self._known_symbols or set(self._contracts))
+            return {
+                "state": self._state,
+                "connection_status": self._connection_status,
+                "started_at": self._started_at,
+                "stopped_at": self._stopped_at,
+                "subscribed_symbols": subscribed_symbols,
+                "subscription_count": len(self._subscriptions),
+                "subscription_call_count": self._subscription_call_count,
+                "include_bidask": self._include_bidask,
+                "event_callback_method": self._event_callback_method,
+                "last_heartbeat_at": self._last_heartbeat_at,
+                "last_reconnect_at": self._last_reconnect_at,
+                "last_resubscribe_at": self._last_resubscribe_at,
+                "reconnect_count": self._reconnect_count,
+                "disconnect_count": self._disconnect_count,
+                "resubscribe_count": self._resubscribe_count,
+                "buffer": self.buffer.stats(subscribed_symbols),
+            }
+
+    def _subscribe(self, symbol: str, contract: Any, quote_type: Any, *, total_calls: int, record: bool) -> None:
+        subscribe = getattr(self.quote, "subscribe", None)
+        if not callable(subscribe):
+            raise RuntimeError("shioaji quote.subscribe API is unavailable")
+        subscribe(contract, quote_type=quote_type)
+        with self._lock:
+            self._subscription_call_count += 1
+            if record:
+                self._subscriptions.append((symbol, contract, quote_type))
+        self._pause_for_quote_rate_limit(self._subscription_call_count, total_calls=total_calls)
+
+    def _pause_for_quote_rate_limit(self, call_count: int, *, total_calls: int) -> None:
+        if call_count > 0 and call_count < int(total_calls) and call_count % self._subscribe_batch_size == 0:
+            time_module.sleep(self._subscribe_batch_pause_seconds)
+
+
 class ShioajiGateway:
     """
     Phase 3 live-trading gateway:
@@ -266,6 +710,265 @@ class ShioajiGateway:
             for _ in range(abs(steps)):
                 adjusted = max(self._tw_tick_size(adjusted), adjusted - self._tw_tick_size(adjusted))
         return float(adjusted)
+
+    def get_stock_price_reference(self, symbol: str) -> dict[str, float | str | None]:
+        contract = self._get_stock_contract(symbol)
+        reference_price = None
+        for key in ("reference", "close"):
+            value = getattr(contract, key, None)
+            if isinstance(value, (int, float)) and float(value) > 0:
+                reference_price = float(value)
+                break
+        if reference_price is None:
+            raise RuntimeError("unable to resolve reference price")
+
+        def _optional_contract_float(name: str) -> float | None:
+            value = getattr(contract, name, None)
+            return float(value) if isinstance(value, (int, float)) and float(value) > 0 else None
+
+        return {
+            "symbol": self._normalize_symbol(symbol),
+            "reference_price": float(reference_price),
+            "limit_up_price": _optional_contract_float("limit_up"),
+            "limit_down_price": _optional_contract_float("limit_down"),
+        }
+
+    def get_stock_snapshots(self, symbols: list[str] | tuple[str, ...]) -> dict[str, dict[str, Any]]:
+        if self.api is None:
+            self.login()
+        clean_symbols: list[str] = []
+        contracts: list[Any] = []
+        for symbol in symbols:
+            code = self._normalize_symbol(str(symbol or ""))
+            if not code or code in clean_symbols:
+                continue
+            contracts.append(self._get_stock_contract(code))
+            clean_symbols.append(code)
+        if not contracts:
+            return {}
+        snapshots_fn = getattr(self.api, "snapshots", None)
+        if not callable(snapshots_fn):
+            raise RuntimeError("shioaji snapshots API is unavailable")
+        snapshots = snapshots_fn(contracts)
+        checked_at = datetime.now().isoformat(timespec="seconds")
+
+        def optional_float(value: Any) -> float | None:
+            try:
+                if value is None or value == "":
+                    return None
+                return float(value)
+            except Exception:
+                return None
+
+        output: dict[str, dict[str, Any]] = {}
+        for idx, snapshot in enumerate(list(snapshots or [])):
+            raw = self._serialize(snapshot)
+            data = raw if isinstance(raw, dict) else {}
+            fallback_code = clean_symbols[idx] if idx < len(clean_symbols) else ""
+            code = self._normalize_symbol(str(data.get("code") or fallback_code))
+            price = optional_float(data.get("close"))
+            if price is None or price <= 0:
+                price = optional_float(data.get("buy_price")) or optional_float(data.get("sell_price"))
+            if not code or price is None or price <= 0:
+                continue
+            output[code] = {
+                "symbol": code,
+                "price": float(price),
+                "source": "shioaji_snapshot",
+                "checked_at": checked_at,
+                "open": optional_float(data.get("open")),
+                "high": optional_float(data.get("high")),
+                "low": optional_float(data.get("low")),
+                "close": optional_float(data.get("close")),
+                "buy_price": optional_float(data.get("buy_price")),
+                "sell_price": optional_float(data.get("sell_price")),
+                "volume": optional_float(data.get("volume")),
+                "total_volume": optional_float(data.get("total_volume")),
+                "change_price": optional_float(data.get("change_price")),
+                "change_rate": optional_float(data.get("change_rate")),
+                "raw": raw,
+            }
+        return output
+
+    def get_stock_streaming_quotes(
+        self,
+        symbols: list[str] | tuple[str, ...],
+        *,
+        collect_seconds: float = 3.0,
+        include_bidask: bool = True,
+        fallback_to_snapshot: bool = True,
+        subscribe_batch_size: int = 45,
+        subscribe_batch_pause_seconds: float = 5.0,
+    ) -> dict[str, dict[str, Any]]:
+        if self.api is None:
+            self.login()
+        clean_symbols: list[str] = []
+        for symbol in symbols:
+            code = self._normalize_symbol(str(symbol or ""))
+            if not code or code in clean_symbols:
+                continue
+            clean_symbols.append(code)
+        if not clean_symbols:
+            return {}
+
+        quote = getattr(self.api, "quote", None)
+        if quote is None:
+            if fallback_to_snapshot:
+                return self._streaming_snapshot_fallback(clean_symbols)
+            raise RuntimeError("shioaji quote API is unavailable")
+
+        subscribe = getattr(quote, "subscribe", None)
+        if not callable(subscribe):
+            if fallback_to_snapshot:
+                return self._streaming_snapshot_fallback(clean_symbols)
+            raise RuntimeError("shioaji quote.subscribe API is unavailable")
+
+        manager = self.create_stock_streaming_quote_manager(
+            include_bidask=include_bidask,
+            subscribe_batch_size=subscribe_batch_size,
+            subscribe_batch_pause_seconds=subscribe_batch_pause_seconds,
+        )
+        try:
+            manager.start(clean_symbols)
+            manager.wait_until_ready(clean_symbols, collect_seconds)
+        finally:
+            manager.stop()
+
+        output = manager.snapshot(clean_symbols)
+        if fallback_to_snapshot:
+            missing = [symbol for symbol in clean_symbols if symbol not in output]
+            if missing:
+                fallback = self._streaming_snapshot_fallback(missing)
+                manager_status = manager.status()
+                for item in fallback.values():
+                    item["quote_manager"] = manager_status
+                output.update(fallback)
+        return output
+
+    def create_stock_streaming_quote_manager(
+        self,
+        *,
+        include_bidask: bool = True,
+        subscribe_batch_size: int = 45,
+        subscribe_batch_pause_seconds: float = 5.0,
+        max_ticks_per_symbol: int = 200,
+        max_bidasks_per_symbol: int = 100,
+    ) -> ShioajiStreamingQuoteManager:
+        if self.api is None:
+            self.login()
+        return ShioajiStreamingQuoteManager(
+            api=self.api,
+            normalize_symbol=self._normalize_symbol,
+            get_stock_contract=self._get_stock_contract,
+            serialize=self._serialize,
+            resolve_constant=self._resolve_constant,
+            include_bidask=include_bidask,
+            subscribe_batch_size=subscribe_batch_size,
+            subscribe_batch_pause_seconds=subscribe_batch_pause_seconds,
+            max_ticks_per_symbol=max_ticks_per_symbol,
+            max_bidasks_per_symbol=max_bidasks_per_symbol,
+        )
+
+    def _streaming_snapshot_fallback(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
+        fallback = self.get_stock_snapshots(symbols)
+        for item in fallback.values():
+            item["source"] = "shioaji_streaming_fallback_snapshot"
+            item["streaming_fallback"] = True
+            item["quote_buffer_status"] = "fallback_snapshot"
+        return fallback
+
+    @staticmethod
+    def _set_quote_event_callback(quote: Any, callback: Any) -> str | None:
+        for name in ("set_event_callback", "set_on_event_callback"):
+            setter = getattr(quote, name, None)
+            if callable(setter):
+                try:
+                    setter(callback)
+                    return name
+                except TypeError:
+                    continue
+        on_event = getattr(quote, "on_event", None)
+        if callable(on_event):
+            try:
+                on_event(callback)
+                return "on_event"
+            except TypeError:
+                try:
+                    on_event()(callback)
+                    return "on_event"
+                except TypeError:
+                    return None
+        return None
+
+    @staticmethod
+    def _pause_for_quote_rate_limit(
+        call_count: int,
+        *,
+        total_calls: int,
+        batch_size: int,
+        pause_seconds: float,
+    ) -> None:
+        safe_batch_size = max(1, int(batch_size or 1))
+        if call_count > 0 and call_count < int(total_calls) and call_count % safe_batch_size == 0:
+            time_module.sleep(max(0.0, float(pause_seconds or 0.0)))
+
+    def fetch_attention_stocks(self, trade_date: date | None = None) -> list[dict[str, Any]]:
+        if self.api is None:
+            self.login()
+        notice_fn = getattr(self.api, "notice", None)
+        if not callable(notice_fn):
+            raise RuntimeError("shioaji notice API is unavailable")
+        payload = self._serialize(notice_fn())
+        source = payload if isinstance(payload, dict) else {}
+        codes = list(source.get("code") or [])
+        updated_at = list(source.get("updated_at") or [])
+        closes = list(source.get("close") or [])
+        reasons = list(source.get("reason") or [])
+        announced_dates = list(source.get("announced_date") or [])
+        sync_date = trade_date or datetime.now().date()
+        rows: list[dict[str, Any]] = []
+        for idx, raw_code in enumerate(codes):
+            symbol = self._normalize_symbol(str(raw_code or ""))
+            if not symbol:
+                continue
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "trade_date": sync_date,
+                    "announced_date": self._coerce_date(self._list_get(announced_dates, idx), fallback=sync_date),
+                    "updated_at": self._coerce_datetime(self._list_get(updated_at, idx)),
+                    "close": self._optional_float(self._list_get(closes, idx)) or 0.0,
+                    "reason": str(self._list_get(reasons, idx) or ""),
+                    "source": "shioaji_notice",
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _list_get(values: list[Any], idx: int) -> Any:
+        return values[idx] if 0 <= idx < len(values) else None
+
+    @staticmethod
+    def _coerce_date(value: Any, *, fallback: date) -> date:
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        try:
+            return datetime.fromisoformat(str(value)).date()
+        except (TypeError, ValueError):
+            return fallback
+
+    @staticmethod
+    def _coerce_datetime(value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, date):
+            return datetime.combine(value, time.min)
+        try:
+            return datetime.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _resolve_constant(module: Any, enum_name: str, member_name: str, fallback: str):
