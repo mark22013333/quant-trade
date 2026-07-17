@@ -109,6 +109,91 @@ systemctl status quant-trade-web --no-pager
 journalctl -u quant-trade-web -n 100 --no-pager
 ```
 
+每日雷達平日排程可先產生 systemd service / timer，再安裝：
+
+```bash
+/opt/quant-trade/venv/bin/python -m app.cli write-systemd-units \
+  --project-dir /opt/quant-trade \
+  --python /opt/quant-trade/venv/bin/python \
+  --hour 8 \
+  --minute 45 \
+  --universe curated_watchlist \
+  --notify telegram \
+  --notify-style premarket \
+  --include-health-monitor \
+  --health-use-ops-readiness \
+  --health-include-intraday-quote-review \
+  --health-hour 9 \
+  --health-minute 30 \
+  --health-notify telegram \
+  --include-trigger-monitor \
+  --trigger-monitor-price-source shioaji_streaming \
+  --trigger-monitor-streaming-seconds 3 \
+  --trigger-monitor-max-price-age-seconds 180 \
+  --include-intraday-quote-service \
+  --intraday-quote-symbols 2330,2317,2454
+
+cp /opt/quant-trade/deploy/systemd/quant-trade-daily-radar.service /etc/systemd/system/
+cp /opt/quant-trade/deploy/systemd/quant-trade-daily-radar.timer /etc/systemd/system/
+cp /opt/quant-trade/deploy/systemd/quant-trade-daily-radar-health.service /etc/systemd/system/
+cp /opt/quant-trade/deploy/systemd/quant-trade-daily-radar-health.timer /etc/systemd/system/
+cp /opt/quant-trade/deploy/systemd/quant-trade-daily-radar-trigger-monitor.service /etc/systemd/system/
+cp /opt/quant-trade/deploy/systemd/quant-trade-daily-radar-trigger-monitor.timer /etc/systemd/system/
+cp /opt/quant-trade/deploy/systemd/quant-trade-intraday-quote.service /etc/systemd/system/
+cp /opt/quant-trade/deploy/systemd/quant-trade-intraday-quote-health.service /etc/systemd/system/
+cp /opt/quant-trade/deploy/systemd/quant-trade-intraday-quote-health.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now quant-trade-daily-radar.timer
+systemctl enable --now quant-trade-daily-radar-health.timer
+systemctl enable --now quant-trade-daily-radar-trigger-monitor.timer
+systemctl enable --now quant-trade-intraday-quote.service
+systemctl enable --now quant-trade-intraday-quote-health.timer
+systemctl list-timers quant-trade-daily-radar.timer --no-pager
+journalctl -u quant-trade-daily-radar-health.service -n 100 --no-pager
+journalctl -u quant-trade-daily-radar.service -n 100 --no-pager
+```
+
+每日雷達 timer 會執行 `run-daily-radar-job`，同步市場資料、更新注意股、排序每日雷達、保存快照並匯出報表；匯出的 HTML/CSV/JSON/Brief 會包含研究配置草稿、配置診斷、review queue、配置驗證與配置校準。若 service 帶有 `--notify telegram|line|both`，完成後會把 `decision_brief` 壓成通知摘要；`--notify-style premarket|intraday|postmarket` 可切換盤前完整 Brief、盤中精簡快訊或盤後回顧。若要固定使用授權指數成分股池，可在 `write-systemd-units` 加上 `--universe index:<key> --index-constituents-url <官方HTTPS下載URL>`，timer 每次跑雷達前會先更新 `data/cache/index_constituents/<key>.csv`。健康檢查 timer 會在 09:30 執行 `ops-readiness --include-intraday-quote-review --fail-on-danger`，用每日雷達、收盤摘要、升級 Gate、環境旗標與盤後行情回顧判斷是否告警。unit 只保存命令與路徑，不保存 API key；若官方 URL 本身含 token，請控管 unit 檔案權限。
+
+盤後總檢與行情服務驗收：
+
+```bash
+cd /opt/quant-trade
+/opt/quant-trade/venv/bin/python -m app.cli intraday-quote-service-review \
+  --state-path data/cache/intraday_quote_service_status.json \
+  --max-age-seconds 3600
+
+/opt/quant-trade/venv/bin/python -m app.cli ops-readiness \
+  --target-phase paper \
+  --include-intraday-quote-review \
+  --fail-on-danger
+
+systemctl status quant-trade-intraday-quote.service --no-pager
+journalctl -u quant-trade-intraday-quote.service -n 200 --no-pager
+```
+
+若要讓盤中觸發觀察也固定跑，可在產生 units 時加上 `--include-trigger-monitor --trigger-monitor-price-source shioaji_streaming --trigger-monitor-streaming-seconds 3`，短時間訂閱 Shioaji tick / bidask 覆蓋每日雷達快照價格，沒有收到串流報價時會 fallback snapshot；若只想用一次性快照，也可改成 `--trigger-monitor-price-source shioaji_snapshot`。外部報價會套用 `--trigger-monitor-max-price-age-seconds` freshness gate，過期或時間不可判讀時會自動降回雷達價格，不會把標的推成已觸發或接近觸發。報價失敗時也會在 payload 留下錯誤，避免通知流程直接中斷。正式 Shioaji 環境可再加 `--trigger-monitor-shioaji-live`，但請先確認 `.env` 與帳戶權限。
+
+```bash
+/opt/quant-trade/venv/bin/python -m app.cli write-systemd-units \
+  --project-dir /opt/quant-trade \
+  --python /opt/quant-trade/venv/bin/python \
+  --include-trigger-monitor \
+  --trigger-monitor-hour 9 \
+  --trigger-monitor-minute 15 \
+  --trigger-monitor-notify telegram \
+  --trigger-monitor-notify-on near \
+  --trigger-monitor-price-source shioaji_streaming \
+  --trigger-monitor-streaming-seconds 3 \
+  --trigger-monitor-max-price-age-seconds 180 \
+  --trigger-monitor-notification-cooldown-minutes 240
+
+cp /opt/quant-trade/deploy/systemd/quant-trade-daily-radar-trigger-monitor.service /etc/systemd/system/
+cp /opt/quant-trade/deploy/systemd/quant-trade-daily-radar-trigger-monitor.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now quant-trade-daily-radar-trigger-monitor.timer
+```
+
 本機驗證：
 
 ```bash

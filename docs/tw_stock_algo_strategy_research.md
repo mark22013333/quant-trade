@@ -274,11 +274,13 @@
 
 本專案已具備股票 `OrderIntent -> TradingExecutionService -> ShioajiGateway` 主幹。下一步建議補：
 
-- 賣出單部位檢查。
-- 委託價格保護：不可偏離最新參考價超過 N ticks 或 N%。
-- 漲跌停成交限制更精準化。
-- 處置股與注意股阻擋接正式資料表。
-- live order 必須帶 strategy version / signal id。
+- 賣出單部位檢查強化：目前已有 preview metadata `position_quantity` 與 `sellable_quantity` 的 live gate，控制台查詢帳戶快照後會優先用 Shioaji `Unit.Share` 取得股數，並以券商可賣欄位或 `yd_quantity` 作為基礎可賣股數，再扣除同股票尚未完成的賣出委託；整股 `Common` 會以 1 張 = 1000 股換算後檢查。下一步應在券商提供更完整的即時可賣庫存 / 交割限制欄位時優先使用，並再細分當沖、融資融券與特殊交割情境。
+- 委託價格與漲跌停保護強化：目前已有 preview metadata `reference_price` 的 live gate，控制台建立正式 Preview 前也會先查詢券商合約參考價與合約漲跌停價；系統會依交易單位套用盤中零股 3 ticks / 1%、整股 2 ticks / 0.5% 的門檻，並先阻擋買在漲停、賣在跌停或超出漲跌停區間的委託。下一步應再依商品類型、交易時段與距離漲跌停的風險帶調整門檻。
+- 整體投組曝險保護：目前已有 `portfolio_equity`、`current_portfolio_exposure`、`max_portfolio_exposure_pct` 的 live hard gate，execution service 與 Shioaji gateway 都會在本次委託後曝險超標時以 `max_portfolio_exposure` 拒絕。控制台會從帳戶快照自動估算投組市值、未成交買單曝險、單檔市值、投組權益、已實現損益與未實現損益後寫入 Preview metadata；下一步是把 PnL 來源標示得更細，並在券商提供更完整的當日損益欄位時優先使用。
+- 處置股與注意股阻擋接正式資料表：處置股已接本機 `disposition_periods`，注意股已可由 Shioaji `api.notice()` 同步到 `attention_stocks`；正式 Preview 會查兩張資料表並寫入 live gate metadata。一鍵候選與每日雷達已會在核心同步中帶入注意股，資料健康度首頁也會顯示注意股 / 處置股 freshness，避免資料過期時誤以為沒有風險名單。
+- 每日雷達排程：已新增 `run-daily-radar-job` 單次工作，以及 `run-scheduler --enable-daily-radar` 平日排程選項，可固定執行資料同步、注意股更新、雷達排序、快照保存與匯出；排程匯出會同步帶入研究配置草稿、配置診斷、review queue、配置驗證與配置校準，讓自動產出的 HTML/CSV/JSON/Brief 和控制台手動匯出一致。搭配 `--notify telegram|line|both` 會在雷達完成後送出盤前 Brief，包含主線、交接摘要、三條行動線與報表連結。macOS 可用 `write-launchd-plist` 產生 launchd plist，Linux/VM 可用 `write-systemd-units` 產生 systemd service + timer，容器部署可用 `write-docker-compose` 產生 Docker Compose + Dockerfile 常駐每日雷達排程。已新增 `daily-radar-health` CLI、`/api/radar/deployment-health` 與控制台部署健康狀態列，用來驗收最新 run、候選數、可進場數與 sync job 狀態；健康檢查 CLI 也支援 `--notify telegram|line|both` 與 `--notify-on danger|warn|always`，可把漏跑、過期或候選異常偏低主動送到通知通道。`write-systemd-units --include-health-monitor` 可一併產生健康檢查 service/timer，Docker Compose 也會預設加入不通知的 healthcheck；後續可和收盤後實際券商對帳流程更緊密整合。
+- 收盤後對帳 / paper-live 差異追蹤：已新增 `eod-summary` CLI、`/api/tw-live/eod-summary` 與控制台「收盤後對帳摘要」，會彙整今日 execution、拒單/錯誤、待決策 Preview、最近 promotion gate、最近 reconciliation 與資料健康度；若最新對帳不一致會標為需處理，沒有今日對帳則標為需留意。
+- live order 已要求帶 `strategy_name`、`strategy_version` 與 `signal_id`；正式 approve 會拒絕與原始 Preview 不一致的追蹤欄位，控制台手動 Preview 可填這三個欄位，從每日雷達帶入時會自動標成 `daily_radar` 來源。
 
 ### D. 報表與文件層
 
