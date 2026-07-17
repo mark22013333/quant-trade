@@ -253,6 +253,9 @@ class FinMindClient:
                 "symbol": symbol,
                 "name": str(self._pick(row, "stock_name", "name", "company_name") or "").strip(),
                 "market": market,
+                "industry": str(
+                    self._pick(row, "industry_category", "industry", "產業別", "industry_name", "category") or ""
+                ).strip(),
                 "source": "finmind",
             }
         return [result_map[key] for key in sorted(result_map.keys())]

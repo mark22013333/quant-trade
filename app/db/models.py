@@ -24,6 +24,7 @@ class Instrument(Base):
     symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
     name: Mapped[str] = mapped_column(String(100), default="")
     market: Mapped[str] = mapped_column(String(10), default="TW")
+    industry: Mapped[str] = mapped_column(String(80), default="")
     is_0050: Mapped[bool] = mapped_column(default=False)
     is_active: Mapped[bool] = mapped_column(default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -50,6 +51,20 @@ class DailyBar(Base):
     source: Mapped[str] = mapped_column(String(30), default="finmind")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     __table_args__ = (UniqueConstraint("symbol", "date", name="uq_daily_bars_symbol_date"),)
+
+
+class IndustryIndexBar(Base):
+    __tablename__ = "industry_index_bars"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    index_name: Mapped[str] = mapped_column(String(80), index=True)
+    industry: Mapped[str] = mapped_column(String(80), index=True)
+    date: Mapped[date] = mapped_column(Date, index=True)
+    close: Mapped[float] = mapped_column(Float)
+    change: Mapped[float] = mapped_column(Float, default=0.0)
+    change_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    source: Mapped[str] = mapped_column(String(30), default="twse_mi_index")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("source", "index_name", "date", name="uq_industry_index_source_name_date"),)
 
 
 class InstitutionalChipDaily(Base):
@@ -95,6 +110,27 @@ class DispositionPeriod(Base):
             "disposition_type",
             "reason",
             name="uq_disposition_symbol_period_reason",
+        ),
+    )
+
+
+class AttentionStock(Base):
+    __tablename__ = "attention_stocks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), index=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    announced_date: Mapped[date] = mapped_column(Date, index=True)
+    notice_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    close: Mapped[float] = mapped_column(Float, default=0.0)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(30), default="shioaji_notice")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint(
+            "symbol",
+            "trade_date",
+            "reason",
+            name="uq_attention_symbol_trade_date_reason",
         ),
     )
 

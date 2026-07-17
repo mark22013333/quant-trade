@@ -8,8 +8,8 @@ from app.data.finmind_client import FinMindClient
 def test_fetch_stock_info_filters_twse_tpex(monkeypatch):
     client = FinMindClient(api_key="dummy")
     rows = [
-        {"stock_id": "2330", "stock_name": "TSMC", "type": "twse"},
-        {"stock_id": "4743", "stock_name": "Oneness", "type": "tpex"},
+        {"stock_id": "2330", "stock_name": "TSMC", "type": "twse", "industry_category": "半導體業"},
+        {"stock_id": "4743", "stock_name": "Oneness", "type": "tpex", "industry_category": "生技醫療業"},
         {"stock_id": "0001", "stock_name": "ETF", "type": "etf"},
     ]
     monkeypatch.setattr(client, "_request_dataset", lambda dataset, **kwargs: rows)  # noqa: ARG005
@@ -19,6 +19,7 @@ def test_fetch_stock_info_filters_twse_tpex(monkeypatch):
     assert len(result) == 2
     assert result[0]["market"] in {"TWSE", "TPEX"}
     assert {item["symbol"] for item in result} == {"2330", "4743"}
+    assert {item["industry"] for item in result} == {"半導體業", "生技醫療業"}
 
 
 def test_fetch_shareholding_by_date_normalizes_bucket_rows(monkeypatch):
