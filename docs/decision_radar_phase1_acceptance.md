@@ -94,6 +94,70 @@ Phase 1 名稱：日常決策雷達驗收版。
 - 不因「可下手」分級自動建立 live intent。
 - 建立 Preview 前仍需人工確認、價格保護與 promotion gate。
 
+## 跨交易日營運證據
+
+以下證據不能用單元測試或 seed 資料代替，必須在實際操作後留下紀錄。
+
+### 收盤對帳
+
+先從系統與券商後台分別確認現金及庫存，部位一律填股數，不可混用張數：
+
+```bash
+.venv/bin/python -m app.cli reconcile \
+  --expected-cash <系統現金> \
+  --actual-cash <券商現金> \
+  --expected-positions <系統代號:股數,...> \
+  --actual-positions <券商代號:股數,...>
+
+.venv/bin/python -m app.cli eod-summary
+```
+
+沒有部位時可省略兩個 `--*-positions`。不得用相同的推測值同時填入 expected 與 actual 來製造 matched。
+
+### 盤中行情實機驗證
+
+只在台股正式交易時段啟動，`--shioaji-live` 僅切換到正式行情環境，不代表允許正式下單；`SHIOAJI_ENABLE_LIVE_ORDERS` 仍須保持關閉：
+
+```bash
+.venv/bin/python -m app.cli run-intraday-quote-service \
+  --symbols 2330,2409,3481,2891 \
+  --shioaji-live \
+  --heartbeat-interval-seconds 30 \
+  --fail-on-not-running
+```
+
+讓服務持續到收盤後手動停止，再執行：
+
+```bash
+.venv/bin/python -m app.cli intraday-quote-service-review \
+  --min-heartbeat-count 10 \
+  --min-quote-coverage 0.8 \
+  --fail-on-danger
+```
+
+驗收時記錄 heartbeat、tick、五檔、最大報價覆蓋率、最後連線狀態及 stale fallback。若當日沒有真實斷線事件，不可只憑單元測試宣稱重連實機通過；保留到後續交易日觀察，或在不影響券商工作階段的受控情境驗證。
+
+### 人工 observation
+
+只有完成控制台判讀、Brief 檢查與 Preview 決策後，才可新增當日 observation。以下是「人工婉拒、未送模擬單」範例，欄位必須依當日實際結果調整：
+
+```bash
+.venv/bin/python -m app.cli advisor-observation-add \
+  --observation-date YYYY-MM-DD \
+  --symbol 2330 \
+  --advisor-name stub \
+  --human-action rejected \
+  --simulation-result skipped \
+  --data-quality fresh \
+  --notes "依當日人工判讀填寫"
+
+.venv/bin/python -m app.cli advisor-observation-summary \
+  --advisor-name stub \
+  --min-days 3
+```
+
+不得為了解除 `observation_days_insufficient` 而補寫未實際執行的日期。
+
 ## 通過條件
 
 Phase 1 可結束的標準如下：
