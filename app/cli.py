@@ -1805,7 +1805,25 @@ def cmd_account_snapshot(args) -> None:
     from app.broker.shioaji_account_service import ShioajiAccountService
 
     service = ShioajiAccountService()
-    result = service.get_account_snapshot(simulation=bool(args.simulation))
+    try:
+        result = service.get_account_snapshot(simulation=bool(args.simulation))
+    except Exception as exc:  # noqa: BLE001
+        # Shioaji may include person/account identifiers and network details in
+        # login errors. Keep CLI failures machine-readable without echoing the
+        # broker response or a traceback containing sensitive fields.
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "error": "account_snapshot_failed",
+                    "error_type": type(exc).__name__,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from None
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
 
 
