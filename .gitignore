@@ -209,6 +209,7 @@ __marimo__/
 *.tsv
 *.json
 data/stock_data
-reports
+/reports/
+/output/playwright/
 data/cache
 docs/shioaji/llms-full.txt
