@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
 from app.db.models import Base
@@ -22,6 +24,8 @@ ADVISOR_OBSERVATION_REVISION_PATH = (
 INSTRUMENT_INDUSTRY_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260625_0008_instrument_industry.py"
 INDUSTRY_INDEX_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260625_0009_industry_index_bars.py"
 ATTENTION_STOCKS_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260626_0010_attention_stocks.py"
+RADAR_RISK_ADJUSTED_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260627_0011_radar_risk_adjusted_score.py"
+WATCH_POOL_RISK_QUALITY_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20260628_0012_watch_pool_risk_quality.py"
 DAILY_RADAR_RISK_QUALITY_REVISION_PATH = (
     PROJECT_ROOT / "alembic" / "versions" / "20260629_0013_daily_radar_risk_quality.py"
 )
@@ -137,6 +141,32 @@ def test_attention_stocks_revision_is_checkfirst_safe():
     assert "AttentionStock" in text
     assert "checkfirst=True" in text
     assert "attention_stocks" in Base.metadata.tables
+
+
+def test_radar_score_revisions_are_checkfirst_safe():
+    for path in (
+        RADAR_RISK_ADJUSTED_REVISION_PATH,
+        WATCH_POOL_RISK_QUALITY_REVISION_PATH,
+        DAILY_RADAR_RISK_QUALITY_REVISION_PATH,
+    ):
+        revision_text = path.read_text(encoding="utf-8")
+        assert "inspector.has_table" in revision_text
+        assert "inspector.get_columns" in revision_text
+
+
+def test_fresh_database_can_upgrade_to_head(monkeypatch, tmp_path):
+    database_path = tmp_path / "fresh-upgrade.sqlite"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path.as_posix()}")
+
+    alembic_config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    command.upgrade(alembic_config, "head")
+
+    engine = create_engine(f"sqlite:///{database_path.as_posix()}", future=True)
+    inspector = inspect(engine)
+    daily_radar_columns = {column["name"] for column in inspector.get_columns("daily_radar_snapshots")}
+    watch_pool_columns = {column["name"] for column in inspector.get_columns("watch_pool_entries")}
+    assert {"risk_adjusted_score", "risk_quality_score", "risk_quality_label", "risk_quality_reason"} <= daily_radar_columns
+    assert {"risk_adjusted_score", "risk_quality_score", "risk_quality_label", "risk_quality_reason"} <= watch_pool_columns
 
 
 def test_initialize_schema_backfills_market_fundamental_columns_for_legacy_sqlite():

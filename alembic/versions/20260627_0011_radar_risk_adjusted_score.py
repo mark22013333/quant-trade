@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 revision = "20260627_0011"
@@ -18,14 +19,24 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("daily_radar_snapshots") as batch_op:
-        batch_op.add_column(sa.Column("risk_adjusted_score", sa.Float(), nullable=False, server_default="0.0"))
-    with op.batch_alter_table("watch_pool_entries") as batch_op:
-        batch_op.add_column(sa.Column("risk_adjusted_score", sa.Float(), nullable=False, server_default="0.0"))
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    for table_name in ("daily_radar_snapshots", "watch_pool_entries"):
+        if not inspector.has_table(table_name):
+            continue
+        columns = {column["name"] for column in inspector.get_columns(table_name)}
+        if "risk_adjusted_score" not in columns:
+            with op.batch_alter_table(table_name) as batch_op:
+                batch_op.add_column(sa.Column("risk_adjusted_score", sa.Float(), nullable=False, server_default="0.0"))
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("watch_pool_entries") as batch_op:
-        batch_op.drop_column("risk_adjusted_score")
-    with op.batch_alter_table("daily_radar_snapshots") as batch_op:
-        batch_op.drop_column("risk_adjusted_score")
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    for table_name in ("watch_pool_entries", "daily_radar_snapshots"):
+        if not inspector.has_table(table_name):
+            continue
+        columns = {column["name"] for column in inspector.get_columns(table_name)}
+        if "risk_adjusted_score" in columns:
+            with op.batch_alter_table(table_name) as batch_op:
+                batch_op.drop_column("risk_adjusted_score")
