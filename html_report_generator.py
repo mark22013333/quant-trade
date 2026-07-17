@@ -3,12 +3,131 @@
 不使用視窗介面，完全透過網頁方式呈現，避免維度不匹配問題
 """
 import os
+from html import escape
 import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from datetime import datetime
+
+
+def _text(value, default="未分類"):
+    if value is None or pd.isna(value):
+        return default
+    return str(value)
+
+
+def _format_chart_number(value, digits=2, suffix=""):
+    try:
+        if pd.isna(value):
+            return "-"
+        return f"{float(value):.{digits}f}{suffix}"
+    except Exception:
+        return "-"
+
+
+def _chart_card(title, body):
+    return f"""
+        <section class="chart-card">
+            <h3>{escape(title)}</h3>
+            {body}
+        </section>
+    """
+
+
+def _empty_chart(message="無資料"):
+    return f'<div class="empty-chart">{escape(message)}</div>'
+
+
+def _scatter_chart_html(
+    df,
+    *,
+    x_col,
+    y_col,
+    title,
+    x_label,
+    y_label,
+    x_reference=None,
+    y_reference=None,
+):
+    plot_df = df.copy()
+    plot_df[x_col] = pd.to_numeric(plot_df[x_col], errors="coerce")
+    plot_df[y_col] = pd.to_numeric(plot_df[y_col], errors="coerce")
+    plot_df = plot_df.dropna(subset=[x_col, y_col])
+    if plot_df.empty:
+        return _chart_card(title, _empty_chart())
+
+    x_values = plot_df[x_col]
+    y_values = plot_df[y_col]
+    x_min, x_max = float(x_values.min()), float(x_values.max())
+    y_min, y_max = float(y_values.min()), float(y_values.max())
+    if x_reference is not None:
+        x_min, x_max = min(x_min, float(x_reference)), max(x_max, float(x_reference))
+    if y_reference is not None:
+        y_min, y_max = min(y_min, float(y_reference)), max(y_max, float(y_reference))
+    if x_min == x_max:
+        x_min -= 1.0
+        x_max += 1.0
+    if y_min == y_max:
+        y_min -= 1.0
+        y_max += 1.0
+
+    left, top, width, height = 56.0, 28.0, 540.0, 280.0
+    x_span = x_max - x_min
+    y_span = y_max - y_min
+    score_values = pd.to_numeric(plot_df.get("score", 0), errors="coerce").abs().fillna(0.0)
+    max_score = float(score_values.max()) if not score_values.empty else 0.0
+    colors = ["#0d6efd", "#20c997", "#fd7e14", "#6f42c1", "#198754", "#dc3545"]
+    category_index = {
+        category: idx
+        for idx, category in enumerate(sorted({_text(item) for item in plot_df.get("category", pd.Series(dtype=object))}))
+    }
+
+    reference_lines = []
+    if y_reference is not None and y_min <= float(y_reference) <= y_max:
+        cy = top + height - (((float(y_reference) - y_min) / y_span) * height)
+        reference_lines.append(
+            f'<line x1="{left:.1f}" y1="{cy:.1f}" x2="{left + width:.1f}" y2="{cy:.1f}" stroke="#dc3545" stroke-dasharray="6 4" opacity="0.45" />'
+        )
+    if x_reference is not None and x_min <= float(x_reference) <= x_max:
+        cx = left + (((float(x_reference) - x_min) / x_span) * width)
+        reference_lines.append(
+            f'<line x1="{cx:.1f}" y1="{top:.1f}" x2="{cx:.1f}" y2="{top + height:.1f}" stroke="#dc3545" stroke-dasharray="6 4" opacity="0.45" />'
+        )
+
+    circles = []
+    for idx, (_, row) in enumerate(plot_df.iterrows()):
+        cx = left + (((float(row[x_col]) - x_min) / x_span) * width)
+        cy = top + height - (((float(row[y_col]) - y_min) / y_span) * height)
+        radius = 5.0 + ((float(score_values.iloc[idx]) / max_score) * 11.0) if max_score > 0 else 7.0
+        category = _text(row.get("category"))
+        color = colors[category_index.get(category, 0) % len(colors)]
+        symbol = _text(row.get("symbol"), "-")
+        name = _text(row.get("name"), "")
+        tooltip = (
+            f"{symbol} {name} | {x_label}: {_format_chart_number(row[x_col])} | "
+            f"{y_label}: {_format_chart_number(row[y_col])} | 評分: {_format_chart_number(row.get('score'))}"
+        )
+        circles.append(
+            f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{radius:.1f}" fill="{color}" opacity="0.78">'
+            f"<title>{escape(tooltip)}</title></circle>"
+        )
+
+    axis_labels = f"""
+        <text x="{left:.1f}" y="20" font-size="12" fill="#6c757d">{escape(y_label)}</text>
+        <text x="{left + width - 64:.1f}" y="335" font-size="12" fill="#6c757d">{escape(x_label)}</text>
+        <text x="{left:.1f}" y="326" font-size="11" fill="#6c757d">{escape(_format_chart_number(x_min))}</text>
+        <text x="{left + width - 42:.1f}" y="326" font-size="11" fill="#6c757d">{escape(_format_chart_number(x_max))}</text>
+    """
+    body = f"""
+        <svg class="simple-scatter" viewBox="0 0 640 350" role="img" aria-label="{escape(title)}">
+            <rect x="{left:.1f}" y="{top:.1f}" width="{width:.1f}" height="{height:.1f}" fill="#fbfcfe" stroke="#dee2e6" />
+            <line x1="{left:.1f}" y1="{top + height:.1f}" x2="{left + width:.1f}" y2="{top + height:.1f}" stroke="#adb5bd" />
+            <line x1="{left:.1f}" y1="{top:.1f}" x2="{left:.1f}" y2="{top + height:.1f}" stroke="#adb5bd" />
+            {''.join(reference_lines)}
+            {''.join(circles)}
+            {axis_labels}
+        </svg>
+    """
+    return _chart_card(title, body)
 
 class HtmlReportGenerator:
     """
@@ -39,111 +158,96 @@ class HtmlReportGenerator:
         
         if industry_counts.empty:
             return None
-            
-        # 轉換為長格式數據
-        industry_data = []
-        for idx, row in industry_counts.iterrows():
-            for col in industry_counts.columns:
-                industry_data.append({
-                    '產業類別': idx,
-                    '適合度': '適合' if col else '不適合',
-                    '股票數量': row[col]
-                })
-        
-        df_industry = pd.DataFrame(industry_data)
-        
-        # 繪製堆疊柱狀圖
-        fig = px.bar(
-            df_industry, 
-            x='產業類別', 
-            y='股票數量', 
-            color='適合度',
-            title='各產業適合波段操作的股票數量',
-            color_discrete_map={'適合': 'green', '不適合': 'gray'},
-            barmode='stack',
-            height=500
-        )
-        
-        return fig
+
+        rows_html = []
+        for category, row in industry_counts.iterrows():
+            suitable_count = int(row.loc[True]) if True in row.index else 0
+            unsuitable_count = int(row.loc[False]) if False in row.index else 0
+            total = max(suitable_count + unsuitable_count, 1)
+            suitable_width = suitable_count / total * 100.0
+            unsuitable_width = unsuitable_count / total * 100.0
+            rows_html.append(f"""
+                <div class="bar-row stacked">
+                    <span class="bar-label">{escape(_text(category))}</span>
+                    <div class="bar-track stacked-track" title="適合 {suitable_count}，不適合 {unsuitable_count}">
+                        <i class="bar-ok" style="width:{suitable_width:.1f}%"></i>
+                        <i class="bar-muted" style="width:{unsuitable_width:.1f}%"></i>
+                    </div>
+                    <b>{suitable_count}/{total}</b>
+                </div>
+            """)
+
+        legend = """
+            <div class="chart-legend">
+                <span><i class="legend-ok"></i>適合</span>
+                <span><i class="legend-muted"></i>不適合</span>
+            </div>
+        """
+        return _chart_card("各產業適合波段操作的股票數量", legend + f'<div class="simple-bars">{"".join(rows_html)}</div>')
         
     def _create_score_boxplot(self, all_results):
-        """建立評分盒狀圖"""
+        """建立評分分布摘要"""
         if all_results.empty:
             return None
-            
-        fig = px.box(
-            all_results, 
-            x='category', 
-            y='score',
-            title='各產業波段適合度評分分布',
-            labels={'category': '產業類別', 'score': '適合度評分'},
-            height=500,
-            color='category'
+
+        score_summary = (
+            all_results.groupby("category", dropna=False)["score"]
+            .agg(["count", "min", "median", "mean", "max"])
+            .reset_index()
         )
-        
-        return fig
+        rows_html = []
+        for _, row in score_summary.iterrows():
+            rows_html.append(f"""
+                <tr>
+                    <td>{escape(_text(row["category"]))}</td>
+                    <td>{int(row["count"])}</td>
+                    <td>{_format_chart_number(row["median"], 1)}</td>
+                    <td>{_format_chart_number(row["mean"], 1)}</td>
+                    <td>{_format_chart_number(row["min"], 1)}</td>
+                    <td>{_format_chart_number(row["max"], 1)}</td>
+                </tr>
+            """)
+        body = f"""
+            <table class="metric-table">
+                <thead>
+                    <tr><th>產業</th><th>樣本</th><th>中位數</th><th>平均</th><th>最低</th><th>最高</th></tr>
+                </thead>
+                <tbody>{''.join(rows_html)}</tbody>
+            </table>
+        """
+        return _chart_card("各產業波段適合度評分分布", body)
     
     def _create_volatility_scatter(self, all_results):
         """建立波動性與評分散點圖"""
         if all_results.empty:
             return None
-            
-        # 確保使用正值作為尺寸
-        size_values = np.abs(all_results['score']) + 3  # 加上基礎值，確保點足夠大
-            
-        fig = px.scatter(
-            all_results, 
-            x='volatility', 
-            y='score',
-            color='category',
-            size=size_values,  # 使用絕對值評分作為大小
-            size_max=25,
-            hover_name='symbol',
-            hover_data=['name', 'win_rate', 'num_trades'],
-            title='波動率與適合度評分關係',
-            labels={
-                'volatility': '波動率', 
-                'score': '適合度評分',
-                'category': '產業類別'
-            },
-            height=600
+
+        return _scatter_chart_html(
+            all_results,
+            x_col="volatility",
+            y_col="score",
+            title="波動率與適合度評分關係",
+            x_label="波動率",
+            y_label="適合度評分",
         )
-        
-        return fig
         
     def _create_return_vs_winrate_scatter(self, all_results):
         """建立獲利與勝率散點圖"""
         if all_results.empty:
             return None
-            
-        # 確保使用正值作為尺寸
-        size_values = np.abs(all_results['score']) + 3  # 加上基礎值，確保點足夠大
-            
+
         y_col = 'avg_return' if 'avg_return' in all_results.columns else 'total_return'
         y_label = '平均回報 (%)' if y_col == 'avg_return' else '總回報'
-        fig = px.scatter(
+        return _scatter_chart_html(
             all_results,
-            x='win_rate',
-            y=y_col,  # 使用平均回報或總回報
-            color='category',
-            size=size_values,  # 使用評分絕對值作為大小
-            size_max=25,
-            hover_name='symbol',
-            hover_data=['name', 'num_trades', 'volatility'],
-            title='勝率與平均回報關係',
-            labels={
-                'win_rate': '勝率',
-                y_col: y_label,
-                'category': '產業類別'
-            },
-            height=600
+            x_col="win_rate",
+            y_col=y_col,
+            title="勝率與平均回報關係",
+            x_label="勝率",
+            y_label=y_label,
+            x_reference=0.5,
+            y_reference=0,
         )
-        
-        # 添加參考線
-        fig.add_hline(y=0, line_dash='dash', line_color='red', opacity=0.4)
-        fig.add_vline(x=0.5, line_dash='dash', line_color='red', opacity=0.4)
-        
-        return fig
         
     def _create_top_stocks_table(self, all_results, top_n=10):
         """建立前 N 名股票表格"""
@@ -289,19 +393,15 @@ class HtmlReportGenerator:
         industry_summary_table = self._create_industry_summary_table(industry_results)
         
         # 產生圖表 HTML
-        charts_html = ""
-        
-        if industry_chart:
-            charts_html += industry_chart.to_html(full_html=False, include_plotlyjs='cdn')
-            
-        if score_boxplot:
-            charts_html += score_boxplot.to_html(full_html=False, include_plotlyjs='cdn')
-            
-        if volatility_scatter:
-            charts_html += volatility_scatter.to_html(full_html=False, include_plotlyjs='cdn')
-            
-        if return_winrate_scatter:
-            charts_html += return_winrate_scatter.to_html(full_html=False, include_plotlyjs='cdn')
+        charts_html = "".join(
+            chart for chart in (
+                industry_chart,
+                score_boxplot,
+                volatility_scatter,
+                return_winrate_scatter,
+            )
+            if chart
+        )
         
         # 格式化參數
         params_html = "<h3>分析參數</h3><ul>"
@@ -343,6 +443,92 @@ class HtmlReportGenerator:
         }}
         .table {{
             margin-bottom: 30px;
+        }}
+        .charts-container {{
+            display: grid;
+            gap: 20px;
+        }}
+        .chart-card {{
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 16px;
+            background: #fff;
+        }}
+        .chart-card h3 {{
+            font-size: 1.15rem;
+            margin-bottom: 12px;
+        }}
+        .chart-legend {{
+            display: flex;
+            gap: 16px;
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-bottom: 10px;
+        }}
+        .chart-legend span {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }}
+        .chart-legend i {{
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            display: inline-block;
+        }}
+        .legend-ok, .bar-ok {{
+            background: #198754;
+        }}
+        .legend-muted, .bar-muted {{
+            background: #adb5bd;
+        }}
+        .simple-bars {{
+            display: grid;
+            gap: 10px;
+        }}
+        .bar-row {{
+            display: grid;
+            grid-template-columns: minmax(120px, 180px) 1fr 64px;
+            gap: 10px;
+            align-items: center;
+            font-size: 0.92rem;
+        }}
+        .bar-label {{
+            overflow-wrap: anywhere;
+        }}
+        .bar-track {{
+            height: 12px;
+            border-radius: 999px;
+            background: #eef2f7;
+            overflow: hidden;
+        }}
+        .stacked-track {{
+            display: flex;
+        }}
+        .stacked-track i {{
+            display: block;
+            height: 100%;
+        }}
+        .metric-table {{
+            width: 100%;
+            border-collapse: collapse;
+        }}
+        .metric-table th, .metric-table td {{
+            padding: 9px 8px;
+            border-bottom: 1px solid #edf0f2;
+            text-align: left;
+        }}
+        .simple-scatter {{
+            width: 100%;
+            max-height: 420px;
+            background: #fbfcfe;
+            border-radius: 8px;
+        }}
+        .empty-chart {{
+            padding: 18px;
+            border: 1px dashed #ced4da;
+            border-radius: 8px;
+            color: #6c757d;
         }}
         .footer {{
             text-align: center;

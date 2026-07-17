@@ -55,6 +55,14 @@ BACKTEST_CONFIG_KEYS = {
     "RISK_FRACTION",
 }
 
+VALIDATION_CONFIG_KEYS = {
+    "cross_symbol_symbols",
+    "max_cross_symbols",
+    "min_cross_symbol_rows",
+    "cross_industry_per_group",
+    "cross_symbol_lookback_days",
+}
+
 
 class StrategyConfigError(ValueError):
     """Raised when strategy/backtest configuration is invalid."""
@@ -95,6 +103,7 @@ class StrategyRunConfig:
     strategy_params: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     risk_config: Dict[str, Any] = field(default_factory=dict)
     backtest_config: Dict[str, Any] = field(default_factory=dict)
+    validation_config: Dict[str, Any] = field(default_factory=dict)
 
     def normalized_dates(self) -> tuple[str, str]:
         end_date = self.end_date or datetime.now().strftime("%Y-%m-%d")
@@ -148,10 +157,13 @@ class StrategyRunConfig:
 
         risk_unknown = _unknown_keys(self.risk_config or {}, RISK_CONFIG_KEYS)
         backtest_unknown = _unknown_keys(self.backtest_config or {}, BACKTEST_CONFIG_KEYS)
+        validation_unknown = _unknown_keys(self.validation_config or {}, VALIDATION_CONFIG_KEYS)
         if risk_unknown:
             raise StrategyConfigError(f"unknown risk_config key: {', '.join(sorted(risk_unknown))}")
         if backtest_unknown:
             raise StrategyConfigError(f"unknown backtest_config key: {', '.join(sorted(backtest_unknown))}")
+        if validation_unknown:
+            raise StrategyConfigError(f"unknown validation_config key: {', '.join(sorted(validation_unknown))}")
 
         return StrategyRunConfig(
             symbol=symbol,
@@ -164,6 +176,7 @@ class StrategyRunConfig:
             strategy_params=normalized_params,
             risk_config=self._normalize_risk_config(self.risk_config or {}),
             backtest_config=self._normalize_backtest_config(self.backtest_config or {}),
+            validation_config=self._normalize_validation_config(self.validation_config or {}),
         )
 
     @staticmethod
@@ -216,6 +229,22 @@ class StrategyRunConfig:
                 out[key] = _finite_float(value, name=f"backtest_config.{key}", min_value=0.0, max_value=1.0)
         return out
 
+    @staticmethod
+    def _normalize_validation_config(config: dict[str, Any]) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for key, value in config.items():
+            if key == "cross_symbol_symbols":
+                out[key] = _normalize_symbol_list(value)
+            elif key == "max_cross_symbols":
+                out[key] = _finite_int(value, name=f"validation_config.{key}", min_value=0, max_value=20)
+            elif key == "min_cross_symbol_rows":
+                out[key] = _finite_int(value, name=f"validation_config.{key}", min_value=20, max_value=2000)
+            elif key == "cross_industry_per_group":
+                out[key] = _finite_int(value, name=f"validation_config.{key}", min_value=1, max_value=5)
+            elif key == "cross_symbol_lookback_days":
+                out[key] = _finite_int(value, name=f"validation_config.{key}", min_value=20, max_value=1000)
+        return out
+
     def strategy_engine_config(self) -> dict[str, Any]:
         cfg = self.validated()
         return {
@@ -224,3 +253,26 @@ class StrategyRunConfig:
             "threshold": cfg.threshold,
             "params": cfg.strategy_params,
         }
+
+
+def _normalize_symbol_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw_items = value.replace("\n", ",").replace(";", ",").split(",")
+    elif isinstance(value, (list, tuple, set)):
+        raw_items = list(value)
+    else:
+        raw_items = [value]
+    symbols: list[str] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        symbol = str(item or "").strip().upper()
+        if not symbol:
+            continue
+        identity = symbol[:-3] if symbol.endswith(".TW") else symbol
+        if identity in seen:
+            continue
+        seen.add(identity)
+        symbols.append(symbol)
+    return symbols

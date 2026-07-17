@@ -6,8 +6,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
-import numpy as np
-import plotly.express as px
 
 
 def _format_percent(x):
@@ -73,44 +71,92 @@ def _build_table(df_top: pd.DataFrame) -> str:
     """
 
 
+def _marker_sizes(values: pd.Series, *, minimum: float = 8.0, maximum: float = 28.0) -> list[float]:
+    numeric = pd.to_numeric(values, errors="coerce").fillna(0.0)
+    if numeric.empty or float(numeric.max()) <= 0:
+        return [minimum] * len(numeric)
+    scaled = minimum + ((numeric / float(numeric.max())) * (maximum - minimum))
+    return [float(item) for item in scaled]
+
+
+def _simple_scatter_html(df: pd.DataFrame) -> str:
+    if df.empty:
+        return "<div class='empty-chart'>無資料</div>"
+    x = pd.to_numeric(df["atr_pct"], errors="coerce").fillna(0.0)
+    y = pd.to_numeric(df["ret_20d"], errors="coerce").fillna(0.0)
+    x_min, x_max = float(x.min()), float(x.max())
+    y_min, y_max = float(y.min()), float(y.max())
+    x_span = max(x_max - x_min, 1e-9)
+    y_span = max(y_max - y_min, 1e-9)
+    sizes = _marker_sizes(df["avg_turnover_20d"], minimum=5.0, maximum=13.0)
+    colors = ["#18a384", "#1d6ef2", "#ff6b35", "#8b5cf6", "#64748b"]
+    industries = {name: idx for idx, name in enumerate(sorted({str(item or "未分類") for item in df["industry"]}))}
+    circles = []
+    for idx, (_, row) in enumerate(df.iterrows()):
+        cx = 40 + ((float(x.iloc[idx]) - x_min) / x_span * 500)
+        cy = 250 - ((float(y.iloc[idx]) - y_min) / y_span * 210)
+        industry = str(row.get("industry") or "未分類")
+        color = colors[industries.get(industry, 0) % len(colors)]
+        title = f"{row.get('symbol', '-')}: ATR {float(x.iloc[idx]):.2f}, 20日報酬 {float(y.iloc[idx]):.2%}"
+        circles.append(f"<circle cx='{cx:.1f}' cy='{cy:.1f}' r='{sizes[idx]:.1f}' fill='{color}' opacity='0.78'><title>{title}</title></circle>")
+    return f"""
+      <svg class="simple-chart" viewBox="0 0 580 280" role="img" aria-label="波動與報酬散點圖">
+        <line x1="40" y1="250" x2="550" y2="250" stroke="#d0d5dd" />
+        <line x1="40" y1="32" x2="40" y2="250" stroke="#d0d5dd" />
+        {''.join(circles)}
+        <text x="44" y="24" font-size="11" fill="#667085">20日報酬</text>
+        <text x="490" y="270" font-size="11" fill="#667085">ATR%</text>
+      </svg>
+    """
+
+
+def _simple_bar_chart_html(labels: list[str], values: list[float], *, value_suffix: str = "") -> str:
+    if not labels:
+        return "<div class='empty-chart'>無資料</div>"
+    max_value = max([abs(float(item)) for item in values] or [1.0]) or 1.0
+    rows = []
+    for label, value in zip(labels, values):
+        width = min(100.0, abs(float(value)) / max_value * 100.0)
+        rows.append(
+            f"<div class='bar-row'><span>{label}</span><div class='bar-track'><i style='width:{width:.1f}%'></i></div><b>{_format_float(value, 1)}{value_suffix}</b></div>"
+        )
+    return f"<div class='simple-bars'>{''.join(rows)}</div>"
+
+
+def _score_histogram_html(df: pd.DataFrame) -> str:
+    values = pd.to_numeric(df["total_score"], errors="coerce").dropna()
+    if values.empty:
+        return "<div class='empty-chart'>無資料</div>"
+    bins = 8
+    min_v, max_v = float(values.min()), float(values.max())
+    step = max((max_v - min_v) / bins, 1.0)
+    labels: list[str] = []
+    counts: list[float] = []
+    for idx in range(bins):
+        start = min_v + (step * idx)
+        end = start + step
+        if idx == bins - 1:
+            count = int(((values >= start) & (values <= end)).sum())
+        else:
+            count = int(((values >= start) & (values < end)).sum())
+        labels.append(f"{start:.0f}-{end:.0f}")
+        counts.append(float(count))
+    return _simple_bar_chart_html(labels, counts)
+
+
 def generate_dashboard(full_df: pd.DataFrame, top20_df: pd.DataFrame, output_dir: str = "reports") -> Path:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = output_dir / f"short_term_dashboard_{timestamp}.html"
 
-    # 圖表 1：波動 vs 短期報酬
-    scatter = px.scatter(
-        full_df,
-        x="atr_pct",
-        y="ret_20d",
-        size="avg_turnover_20d",
-        color="industry",
-        hover_name="symbol",
-        title="波動（ATR%）vs 20日報酬",
-        labels={"atr_pct": "ATR%", "ret_20d": "20日報酬", "avg_turnover_20d": "成交額"},
-        height=520
-    )
-
-    # 圖表 2：分數分布
-    hist = px.histogram(
-        full_df,
-        x="total_score",
-        nbins=30,
-        title="短期投資分數分布",
-        height=360
-    )
+    scatter_html = _simple_scatter_html(full_df)
+    hist_html = _score_histogram_html(full_df)
 
     # 圖表 3：Top20 產業分布
     industry_counts = top20_df["industry"].value_counts().reset_index()
     industry_counts.columns = ["industry", "count"]
-    industry_bar = px.bar(
-        industry_counts,
-        x="industry",
-        y="count",
-        title="Top20 產業分布",
-        height=360
-    )
+    industry_bar_html = _simple_bar_chart_html(industry_counts["industry"].tolist(), [float(item) for item in industry_counts["count"].tolist()])
 
     table_html = _build_table(top20_df)
 
@@ -176,6 +222,14 @@ def generate_dashboard(full_df: pd.DataFrame, top20_df: pd.DataFrame, output_dir
     .grid {{ display: grid; grid-template-columns: 2fr 1fr; gap: 18px; padding: 0 32px 32px; }}
     .panel {{ background: white; border-radius: 16px; padding: 18px; box-shadow: 0 8px 24px var(--shadow); }}
     .panel h3 {{ font-family: 'Fraunces', serif; margin: 0 0 10px; }}
+    .simple-chart {{ width: 100%; height: 320px; background: #fbfcfe; border-radius: 10px; border: 1px solid #edf0f5; }}
+    .simple-bars {{ display: grid; gap: 10px; margin-top: 8px; }}
+    .bar-row {{ display: grid; grid-template-columns: 90px 1fr 54px; gap: 8px; align-items: center; font-size: 12px; }}
+    .bar-row span {{ overflow-wrap: anywhere; }}
+    .bar-track {{ height: 10px; border-radius: 999px; background: #eef2f7; overflow: hidden; }}
+    .bar-track i {{ display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent-2), #1d6ef2); }}
+    .bar-row b {{ text-align: right; font-family: monospace; }}
+    .empty-chart {{ padding: 18px; color: var(--muted); border: 1px dashed #d0d5dd; border-radius: 10px; }}
 
     .full {{ padding: 0 32px 32px; }}
     .table-wrap {{ background: white; border-radius: 16px; padding: 18px; box-shadow: 0 8px 24px var(--shadow); }}
@@ -215,18 +269,18 @@ def generate_dashboard(full_df: pd.DataFrame, top20_df: pd.DataFrame, output_dir
   <section class="grid">
     <div class="panel">
       <h3>波動 vs 短期報酬</h3>
-      {scatter.to_html(full_html=False, include_plotlyjs='cdn')}
+      {scatter_html}
     </div>
     <div class="panel">
       <h3>分數分布</h3>
-      {hist.to_html(full_html=False, include_plotlyjs='cdn')}
+      {hist_html}
     </div>
   </section>
 
   <section class="grid">
     <div class="panel">
       <h3>Top20 產業分布</h3>
-      {industry_bar.to_html(full_html=False, include_plotlyjs='cdn')}
+      {industry_bar_html}
     </div>
     <div class="panel">
       <h3>評分說明</h3>

@@ -35,8 +35,9 @@ class _Chip:
 
 
 class _Repo:
-    def __init__(self, bars: list[_Bar]):
+    def __init__(self, bars: list[_Bar], industry: str = ""):
         self._bars = bars
+        self._industry = industry
 
     def get_daily_bars(self, symbol: str, start_date=None, end_date=None):  # noqa: ANN001, ARG002
         return self._bars
@@ -61,6 +62,9 @@ class _Repo:
 
     def get_instrument_name(self, symbol: str) -> str:
         return "測試股"
+
+    def get_instrument_industry(self, symbol: str) -> str:  # noqa: ARG002
+        return self._industry
 
 
 def _make_bars() -> list[_Bar]:
@@ -103,5 +107,35 @@ def test_score_symbol_centralizes_quality_chip_structure_and_liquidity():
     assert scored.data_quality == "fresh"
     assert scored.chip_available is True
     assert scored.chip_up3 is True
+    assert scored.industry_group == "電子/科技"
     assert 0.0 <= scored.total_score <= 1.0
     assert scored.total_score > 0.7
+
+
+def test_score_symbol_prefers_instrument_industry_over_symbol_proxy():
+    bars = _make_bars()
+
+    def fake_signal(_df):  # noqa: ANN001
+        return {
+            "entry": True,
+            "trend_ok": True,
+            "vol_ok": True,
+            "trigger": True,
+            "trigger_reason": "rsi3<20",
+            "close": 120.0,
+            "ma60": 100.0,
+            "volume": 3000.0,
+            "volume_ma5": 1500.0,
+            "score": 0.9,
+            "risk_score": 0.8,
+        }
+
+    scored = score_symbol(
+        _Repo(bars, industry="半導體業"),
+        symbol="2330",
+        trade_date=bars[-1].date,
+        signal_evaluator=fake_signal,
+    )
+
+    assert scored is not None
+    assert scored.industry_group == "半導體業"

@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from typing import Callable
 
 from app.alerts.signal_engine import _bars_to_frame, evaluate_entry_signal
+from app.services.market_context import atr_heat_level, classify_tw_symbol_group
 from app.services.universe import normalize_risk_profile
 
 
@@ -73,6 +74,7 @@ class ScoredSymbol:
     last_bar_date: str | None
     data_quality: str
     disposition_active: bool
+    attention_active: bool
     chip_net_5d: float
     chip_up3: bool
     chip_available: bool
@@ -85,6 +87,9 @@ class ScoredSymbol:
     chip_score: float
     structure_score: float
     liquidity_score: float
+    industry_group: str
+    atr_pct: float
+    atr_heat: str
     revenue_score: float
     quality_score: float
     valuation_or_growth_score: float
@@ -128,6 +133,24 @@ def _safe_json_list(value: str) -> list[str]:
     except Exception:
         pass
     return []
+
+
+def _calc_atr_pct(frame, period: int = 14) -> float:
+    if frame.empty or len(frame) < 2:
+        return 0.0
+    rows = frame[["high", "low", "close"]].tail(max(2, int(period) + 1)).to_dict("records")
+    ranges: list[float] = []
+    prev_close = float(rows[0]["close"])
+    for row in rows[1:]:
+        high = float(row["high"])
+        low = float(row["low"])
+        close = float(row["close"])
+        ranges.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
+        prev_close = close
+    latest_close = float(rows[-1]["close"])
+    if latest_close <= 0 or not ranges:
+        return 0.0
+    return clip01((sum(ranges[-period:]) / len(ranges[-period:])) / latest_close)
 
 
 def _fundamental_scores(repo, *, symbol: str, trade_date: date) -> dict:
@@ -237,6 +260,8 @@ def score_symbol(
 
     disposition = repo.get_active_disposition(symbol=symbol, on_date=trade_date)
     disposition_active = bool(disposition.get("active", False))
+    attention = repo.get_active_attention(symbol=symbol, on_date=trade_date) if hasattr(repo, "get_active_attention") else {}
+    attention_active = bool(attention.get("active", False))
 
     chip_rollup = repo.get_institutional_chip_rollup(symbol=symbol, end_date=trade_date, lookback_days=5)
     chip_net_5d = float(chip_rollup.get("institutional_net_buy_sum", 0.0) or 0.0)
@@ -263,6 +288,14 @@ def score_symbol(
     volume = float(signal.get("volume", 0.0) or 0.0)
     volume_ma5 = float(signal.get("volume_ma5", 0.0) or 0.0)
     liquidity_score = clip01(((volume / volume_ma5) if volume_ma5 > 0 else 0.0) / 2.0)
+    industry_group = ""
+    if hasattr(repo, "get_instrument_industry"):
+        industry_group = str(repo.get_instrument_industry(symbol) or "").strip()
+    if not industry_group:
+        industry_group = classify_tw_symbol_group(symbol)
+    atr_pct = _calc_atr_pct(frame)
+    profile = normalize_risk_profile(risk_profile)
+    atr_heat = atr_heat_level(atr_pct, risk_profile=profile)
     fundamentals = _fundamental_scores(repo, symbol=symbol, trade_date=trade_date)
     fundamental_score = clip01(
         (fundamentals["revenue_score"] * 0.30)
@@ -280,7 +313,6 @@ def score_symbol(
     )
     total_score = clip01((technical_chip_score * 0.78) + (fundamental_score * 0.22))
     risk_score = clip01((float(signal.get("risk_score", 0.0) or 0.0) * 0.65) + (total_score * 0.35))
-    profile = normalize_risk_profile(risk_profile)
 
     return ScoredSymbol(
         symbol=str(symbol),
@@ -290,6 +322,7 @@ def score_symbol(
         last_bar_date=last_bar_date,
         data_quality=data_quality,
         disposition_active=disposition_active,
+        attention_active=attention_active,
         chip_net_5d=chip_net_5d,
         chip_up3=chip_up3,
         chip_available=chip_available,
@@ -302,6 +335,9 @@ def score_symbol(
         chip_score=chip_score,
         structure_score=structure_score,
         liquidity_score=liquidity_score,
+        industry_group=industry_group,
+        atr_pct=float(atr_pct),
+        atr_heat=atr_heat,
         revenue_score=float(fundamentals["revenue_score"]),
         quality_score=float(fundamentals["quality_score"]),
         valuation_or_growth_score=float(fundamentals["valuation_or_growth_score"]),
@@ -311,5 +347,11 @@ def score_symbol(
         news_summary=dict(fundamentals["news_summary"]),
         total_score=total_score,
         risk_score=risk_score,
-        meta={"risk_profile": profile, "limit_lock_risk": limit_lock_risk(signal)},
+        meta={
+            "risk_profile": profile,
+            "limit_lock_risk": limit_lock_risk(signal),
+            "industry_group": industry_group,
+            "atr_pct": atr_pct,
+            "atr_heat": atr_heat,
+        },
     )
