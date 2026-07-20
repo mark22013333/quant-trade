@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+from pathlib import Path
 
 import pytest
 
@@ -12,12 +13,18 @@ from app.cli import (
     cmd_run_intraday_quote_service,
 )
 from app.services.intraday_quote_service import (
+    DEFAULT_INTRADAY_QUOTE_SERVICE_STATUS_PATH,
     IntradayQuoteService,
     build_intraday_quote_service_review,
     format_intraday_quote_service_review,
     load_intraday_quote_service_status,
     run_intraday_quote_service,
 )
+
+
+def test_pytest_intraday_quote_status_path_is_isolated():
+    assert DEFAULT_INTRADAY_QUOTE_SERVICE_STATUS_PATH != Path("data/cache/intraday_quote_service_status.json")
+    assert "quant-trade-pytest-runtime-" in str(DEFAULT_INTRADAY_QUOTE_SERVICE_STATUS_PATH)
 
 
 class _FakeManager:

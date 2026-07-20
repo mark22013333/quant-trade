@@ -10,6 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 PRODUCTION_DATABASE_URL = f"sqlite:///{(PROJECT_ROOT / 'data' / 'quant_trade.db').as_posix()}"
 
 _pytest_database_root: Path | None = None
+_pytest_runtime_root = Path(tempfile.mkdtemp(prefix="quant-trade-pytest-runtime-"))
 _configured_test_database_url = os.getenv("PYTEST_DATABASE_URL", "").strip()
 
 if _configured_test_database_url:
@@ -22,9 +23,13 @@ else:
 
 # conftest 會在測試模組收集前載入，必須在任何 app/web import 建立 engine 前完成覆寫。
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+os.environ["INTRADAY_QUOTE_SERVICE_STATUS_PATH"] = str(
+    _pytest_runtime_root / "intraday_quote_service_status.json"
+)
 os.environ["QUANT_TRADE_PYTEST_DATABASE_ISOLATED"] = "1"
 
 
 def pytest_sessionfinish(session, exitstatus) -> None:  # noqa: ARG001
     if _pytest_database_root is not None:
         shutil.rmtree(_pytest_database_root, ignore_errors=True)
+    shutil.rmtree(_pytest_runtime_root, ignore_errors=True)

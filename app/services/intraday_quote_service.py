@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time as time_module
 from datetime import datetime
@@ -10,7 +11,9 @@ from typing import Any, Callable
 from app.broker.shioaji_gateway import ShioajiConfig, ShioajiGateway
 
 
-DEFAULT_INTRADAY_QUOTE_SERVICE_STATUS_PATH = Path("data/cache/intraday_quote_service_status.json")
+DEFAULT_INTRADAY_QUOTE_SERVICE_STATUS_PATH = Path(
+    os.getenv("INTRADAY_QUOTE_SERVICE_STATUS_PATH", "data/cache/intraday_quote_service_status.json")
+)
 HEALTH_SEVERITY_RANK = {"idle": 0, "ok": 1, "warn": 2, "danger": 3}
 
 
