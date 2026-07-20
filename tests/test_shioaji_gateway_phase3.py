@@ -76,6 +76,36 @@ class DummyQuote:
             self.event_callback(0, 17, f"unsubscribe {getattr(contract, 'code', '')}", "quote")
 
 
+class QuietDummyQuote(DummyQuote):
+    def subscribe(self, contract, quote_type=None, **kwargs):  # noqa: ANN001, ANN003
+        self.subscriptions.append((getattr(contract, "code", ""), str(quote_type)))
+        if self.event_callback is not None:
+            self.event_callback(0, 16, f"subscribe {getattr(contract, 'code', '')}", "quote")
+
+
+class SlotTick:
+    __slots__ = ("__dict__", "code", "datetime", "close", "volume", "total_volume")
+
+    def __init__(self):
+        self.code = "2330"
+        self.datetime = datetime.now()
+        self.close = 103.5
+        self.volume = 2
+        self.total_volume = 4567
+
+
+class SlotBidAsk:
+    __slots__ = ("__dict__", "code", "datetime", "bid_price", "ask_price", "bid_volume", "ask_volume")
+
+    def __init__(self):
+        self.code = "2330"
+        self.datetime = datetime.now()
+        self.bid_price = [103.0]
+        self.ask_price = [104.0]
+        self.bid_volume = [3]
+        self.ask_volume = [5]
+
+
 class DummyAPI:
     def __init__(self, balances: list[float], contract: SimpleNamespace | None = None):
         self._balances = list(balances)
@@ -263,6 +293,29 @@ def test_streaming_quote_manager_resubscribes_after_reconnect():
     assert len(gateway.api.quote.unsubscriptions) == 2
     assert stopped["state"] == "stopped"
     assert stopped["subscribed_symbols"] == ["2330"]
+
+
+def test_streaming_quote_manager_serializes_slot_based_shioaji_payloads():
+    gateway = ShioajiGateway(ShioajiConfig(simulation=True))
+    gateway.api = DummyAPI([5000.0])
+    gateway.api.quote = QuietDummyQuote()
+    manager = gateway.create_stock_streaming_quote_manager(include_bidask=True)
+
+    assert vars(SlotTick()) == {}
+    assert vars(SlotBidAsk()) == {}
+
+    manager.start(["2330"])
+    gateway.api.quote.tick_callback("TSE", SlotTick())
+    gateway.api.quote.bidask_callback("TSE", SlotBidAsk())
+
+    snapshot = manager.snapshot(["2330"])
+    status = manager.status()
+
+    assert snapshot["2330"]["price"] == 103.5
+    assert snapshot["2330"]["buy_price"] == 103.0
+    assert snapshot["2330"]["sell_price"] == 104.0
+    assert status["buffer"]["tick_count"] == 1
+    assert status["buffer"]["bidask_count"] == 1
 
 
 def test_get_stock_streaming_quotes_collects_tick_and_bidask_prices():

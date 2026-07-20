@@ -237,6 +237,46 @@ class StreamingQuoteBuffer:
 class ShioajiStreamingQuoteManager:
     """Manage Shioaji stock quote subscriptions and reconnect-aware status."""
 
+    _TICK_FIELDS = (
+        "code",
+        "datetime",
+        "open",
+        "avg_price",
+        "close",
+        "high",
+        "low",
+        "amount",
+        "total_amount",
+        "volume",
+        "total_volume",
+        "tick_type",
+        "chg_type",
+        "price_chg",
+        "pct_chg",
+        "bid_side_total_vol",
+        "ask_side_total_vol",
+        "bid_side_total_cnt",
+        "ask_side_total_cnt",
+        "closing_oddlot_shares",
+        "fixed_trade_vol",
+        "suspend",
+        "simtrade",
+        "intraday_odd",
+    )
+    _BIDASK_FIELDS = (
+        "code",
+        "datetime",
+        "bid_price",
+        "bid_volume",
+        "diff_bid_vol",
+        "ask_price",
+        "ask_volume",
+        "diff_ask_vol",
+        "suspend",
+        "simtrade",
+        "intraday_odd",
+    )
+
     def __init__(
         self,
         *,
@@ -311,12 +351,12 @@ class ShioajiStreamingQuoteManager:
             return
 
         def update_tick(tick: Any) -> None:
-            raw = self._serialize(tick)
+            raw = self._serialize_stream_payload(tick, self._TICK_FIELDS)
             if self.buffer.add_tick(raw):
                 self._event.set()
 
         def update_bidask(bidask: Any) -> None:
-            raw = self._serialize(bidask)
+            raw = self._serialize_stream_payload(bidask, self._BIDASK_FIELDS)
             if self.buffer.add_bidask(raw):
                 self._event.set()
 
@@ -330,6 +370,18 @@ class ShioajiStreamingQuoteManager:
             bidask_setter(bidask_callback)
         self._event_callback_method = ShioajiGateway._set_quote_event_callback(self.quote, self._handle_quote_event)
         self._callback_installed = True
+
+    def _serialize_stream_payload(self, value: Any, fields: tuple[str, ...]) -> dict[str, Any]:
+        raw = self._serialize(value)
+        payload = {
+            field: raw[field]
+            for field in fields
+            if isinstance(raw, dict) and field in raw
+        }
+        for field in fields:
+            if field not in payload and hasattr(value, field):
+                payload[field] = self._serialize(getattr(value, field))
+        return payload
 
     def _handle_quote_event(self, resp_code: Any, event_code: Any, info: Any, event_name: Any) -> None:
         self.buffer.record_event(resp_code, event_code, info, event_name)
