@@ -18,6 +18,21 @@ class ExecutionModelConfig:
     max_gap_for_entry: float = 0.07
     max_entry_delay_days: int = 3
 
+    @classmethod
+    def from_confirmed(cls, config, product):
+        fees=config['fees'][product]
+        return cls(commission_rate=fees['commission_rate'],min_commission_fee=__import__('decimal').Decimal(fees['minimum_fee_e4'])/10000,
+                   tax_rate=fees['sell_tax_rate'],slippage=str(__import__('decimal').Decimal(str(config['execution']['slippage_bps']))/10000),
+                   settlement_days=config['execution']['settlement_sessions'],t_plus_entry_days=1,use_odd_lot=True)
+
+    def quote_e4(self, opening, quantity, side):
+        from decimal import Decimal, ROUND_HALF_UP
+        price=int((Decimal(str(opening))*(1+Decimal(str(self.slippage)) if side=='buy' else 1-Decimal(str(self.slippage)))*10000).quantize(Decimal(1),rounding=ROUND_HALF_UP))
+        gross=price*quantity
+        fee=max(int(Decimal(str(self.min_commission_fee))*10000),int((Decimal(gross)*Decimal(str(self.commission_rate))).quantize(Decimal(1),rounding=ROUND_HALF_UP)))
+        tax=int((Decimal(gross)*Decimal(str(self.tax_rate))).quantize(Decimal(1),rounding=ROUND_HALF_UP)) if side=='sell' else 0
+        return price,fee,tax
+
     def to_dict(self) -> dict:
         return asdict(self)
 

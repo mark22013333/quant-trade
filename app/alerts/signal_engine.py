@@ -305,3 +305,16 @@ def compute_daily_signal_suggestions(
             )
         )
     return suggestions
+
+
+def confirmed_signal_intents(repo, *, experiment_id, config_hash, cutoff_at):
+    """合格雷達與紙帳取得同一封存設定的意圖；舊技術指標建議仍屬探索。"""
+    from app.pipeline.swing_research import SwingResearchService
+    service=SwingResearchService(repo.session)
+    experiment=service.get_experiment(experiment_id)
+    if config_hash!=experiment['config_hash']:
+        raise ValueError('config_hash_mismatch')
+    result=service.preview_candidates(experiment_id,cutoff_at)
+    if not result['coverage']['qualified']:
+        raise ValueError('incomplete_research_coverage:'+','.join(result['coverage']['missing_fields']))
+    return result

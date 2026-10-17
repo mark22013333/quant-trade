@@ -301,18 +301,9 @@ class ShortlistService:
         for item in items:
             item.selected = False
             item.final_rank = 0
-            if item.excluded_by_ai_risk:
+            if item.excluded_by_ai_risk or run.ai_status != "normal" or item.ai_status not in {"normal", "accepted"}:
                 continue
             if final_rank < 10:
-                final_rank += 1
-                item.selected = True
-                item.final_rank = final_rank
-        if final_rank < 10:
-            for item in items:
-                if final_rank >= 10:
-                    break
-                if item.selected:
-                    continue
                 final_rank += 1
                 item.selected = True
                 item.final_rank = final_rank
@@ -342,7 +333,7 @@ class ShortlistService:
         run = self._get_run(run_id)
         items = self._items_for_run(run.run_id)
         selected = [item for item in items if item.selected]
-        ordered = sorted(selected or items, key=lambda row: row.final_rank or row.quant_rank)
+        ordered = sorted(selected if run.status == "completed" else items, key=lambda row: row.final_rank or row.quant_rank)
         return {
             **self._run_summary(run),
             "items": [self._item_payload(item) for item in ordered[: max(1, min(30, int(limit)))]],

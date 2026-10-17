@@ -66,3 +66,17 @@ class RiskManager:
 
         return ExitDecision(False)
 
+
+
+def confirmed_swing_exit(config, position, close_e4, sessions, day):
+    """合格波段流程僅採已確認的停損及持有日數，不繼承舊十日或五日預設。"""
+    from decimal import Decimal
+    if not position.get('quantity'):
+        return None
+    cost=Decimal(position['cost_e4'])/position['quantity']
+    if Decimal(close_e4)<=cost*(1-Decimal(str(config['strategy']['stop_loss_pct']))):
+        return 'confirmed_stop_loss'
+    held=sum(position['first_trade_date']<session<=day for session in sessions)
+    if held>=config['strategy']['hold_days']:
+        return 'confirmed_holding_period'
+    return None

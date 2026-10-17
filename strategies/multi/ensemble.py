@@ -16,7 +16,7 @@ class EnsembleDecision:
 
     def combine(self, outputs: Dict[str, pd.DataFrame], index: pd.Index | None = None) -> pd.DataFrame:
         if not outputs:
-            base = pd.DataFrame(index=index or pd.Index([]))
+            base = pd.DataFrame(index=index if index is not None else pd.Index([]))
             base["ensemble_score"] = 0.0
             base["entry_signal"] = 0
             base["active_strategies"] = ""
@@ -35,10 +35,14 @@ class EnsembleDecision:
             weight = float(self.weights.get(name, 1.0))
             if weight < 0:
                 weight = 0.0
+            reason = aligned.get("reason", pd.Series("", index=base_index)).fillna("")
+            # 停用與缺資料不同：主動停用無投票權重；必要缺資料由共同流程阻擋。
+            if reason.eq("disabled").all():
+                weight = 0.0
             weight_total += weight
             score_sum = score_sum + score * weight
             combined[f"{name}_signal"] = signal
-            combined[f"{name}_reason"] = aligned.get("reason", "").fillna("")
+            combined[f"{name}_reason"] = reason
             if weight > 0:
                 active_names.append(name)
 

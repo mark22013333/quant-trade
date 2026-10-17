@@ -100,7 +100,19 @@ def run_symbol_paper_ledger(
     start_date: date,
     end_date: date,
     config: PaperLedgerConfig | None = None,
+    experiment_id: int | None = None,
+    config_hash: str | None = None,
+    observation_at: str | None = None,
+    run_key: str | None = None,
 ) -> dict[str, Any]:
+    if experiment_id is not None:
+        from app.pipeline.swing_research import SwingResearchService
+        service=SwingResearchService(repo.session)
+        experiment=service.get_experiment(experiment_id)
+        if config_hash!=experiment['config_hash']: raise ValueError('config_hash_mismatch')
+        if not observation_at or not run_key: raise ValueError('observation_at_and_run_key_required')
+        service.observe(experiment_id,observation_at,run_key)
+        return service.compare(experiment_id)
     cfg = config or PaperLedgerConfig()
     code = _normalize_symbol(symbol)
     rows = repo.get_daily_bars(symbol=code, start_date=start_date, end_date=end_date)
@@ -311,6 +323,8 @@ def run_symbol_paper_ledger(
         "passed": True,
         "symbol": code,
         "message": "paper_ledger_simulated",
+        "research_mode": "historical_exploratory",
+        "qualified": False,
         "summary": summary,
         "trades": trades,
         "snapshots": snapshots,

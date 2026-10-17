@@ -35,6 +35,8 @@ class DailyRadarRequest:
     prefer_official_bulk: bool = True
     symbols: list[str] | None = None
     threshold_adoption: dict[str, Any] | None = None
+    experiment_id: int | None = None
+    config_hash: str | None = None
 
     def normalized_trade_date(self) -> date:
         return normalize_trade_date(self.trade_date)
@@ -68,6 +70,9 @@ class DailyRadarService:
         progress_hook: Callable[[int, str, str | None], None] | None = None,
     ) -> dict:
         trade_date = request.normalized_trade_date()
+        if request.experiment_id is not None:
+            from app.alerts.signal_engine import confirmed_signal_intents
+            return confirmed_signal_intents(self.repo,experiment_id=request.experiment_id,config_hash=request.config_hash,cutoff_at=trade_date.isoformat()+'T15:00:00+08:00')
         target_count = request.normalized_target_count()
         risk_profile = request.normalized_risk_profile()
         threshold_offset = request.normalized_threshold_offset()

@@ -61,11 +61,24 @@ class BacktestEngine:
         strategy_config: dict | None = None,
         risk_config: dict | None = None,
         backtest_config: dict | None = None,
+        research_service=None,
+        experiment_id: int | None = None,
+        config_hash: str | None = None,
+        observation_at: str | None = None,
+        run_key: str | None = None,
     ) -> dict:
         """
         New path: A/B/C multi-strategy + weighted voting + shared risk rules.
         Fill model: signal at t, fill at t+1 open with slippage/fees/tax.
         """
+        if experiment_id is not None:
+            if research_service is None or not observation_at or not run_key:
+                raise ValueError('confirmed_research_service_and_observation_required')
+            experiment=research_service.get_experiment(experiment_id)
+            if config_hash!=experiment['config_hash']: raise ValueError('config_hash_mismatch')
+            research_service.observe(experiment_id,observation_at,run_key)
+            self.result=research_service.compare(experiment_id)
+            return self.result
         strategy_config = strategy_config or {}
         cfg = MultiStrategyConfig(
             symbol=symbol,
@@ -90,6 +103,8 @@ class BacktestEngine:
             position_sizer=position_sizer,
             settings=merged_backtest_cfg,
         )
+        self.result["research_mode"] = "historical_exploratory"
+        self.result["qualified"] = False
         self.result["strategy_outputs"] = strategy_outputs
         self.result["signals"] = feature_df
         return self.result
@@ -148,7 +163,7 @@ class BacktestEngine:
             open_price = float(row["Open"])
             close_price = float(row["Close"])
             high_price = float(row["High"])
-            volume = float(row.get("Volume", 0.0) or 0.0)
+            volume = float(data["Volume"].iloc[i - 1]) if i > 0 and "Volume" in data.columns else 0.0
             prev_close = float(data["Close"].iloc[i - 1]) if i > 0 else close_price
 
             # Fill pending exit at today's open.

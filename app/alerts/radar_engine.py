@@ -281,7 +281,13 @@ def generate_daily_radar(
     data_freshness_required: bool = True,
     risk_profile: str = "balanced",
     threshold_offset: float = 0.0,
+    experiment_id: int | None = None,
+    config_hash: str | None = None,
 ) -> list[dict]:
+    if experiment_id is not None:
+        from app.alerts.signal_engine import confirmed_signal_intents
+        result=confirmed_signal_intents(repo,experiment_id=experiment_id,config_hash=config_hash,cutoff_at=trade_date.isoformat()+'T15:00:00+08:00')
+        return [dict(row,experiment_id=experiment_id,config_hash=result['config_hash'],research_mode=result['mode'],coverage=result['coverage'],source='confirmed_swing_research') for row in result['candidates']]
     profile = normalize_risk_profile(risk_profile)
     cap = max(10, min(30, int(target_count or 15)))
     offset = _clip(float(threshold_offset or 0.0), -10.0, 10.0)

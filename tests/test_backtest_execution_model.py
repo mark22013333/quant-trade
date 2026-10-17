@@ -108,7 +108,7 @@ def test_entry_limit_up_and_liquidity_blocks_are_reported():
     liquidity_df = _frame(
         opens=[100.0, 101.0, 102.0],
         closes=[100.0, 102.0, 103.0],
-        volumes=[10_000.0, 100.0, 10_000.0],
+        volumes=[100.0, 10_000.0, 10_000.0],
         entry_signals=[1, 0, 0],
     )
 
@@ -131,6 +131,15 @@ def test_exit_limit_down_block_is_reported_for_pending_stop_exit():
 
     sell_rejects = rejects[rejects["side"] == "sell"]
     assert "limit_down_locked" in set(sell_rejects["reason"])
+
+
+
+def test_open_fill_does_not_look_at_later_full_day_volume():
+    df = _frame(opens=[100.0, 101.0, 102.0], closes=[100.0, 102.0, 103.0],
+                volumes=[10_000.0, 0.0, 10_000.0], entry_signals=[1, 0, 0])
+    result = _run(df, {"MIN_DAILY_VOLUME_FOR_FILL": 1000.0})
+    buy = result["trade_log"][result["trade_log"]["side"] == "buy"].iloc[0]
+    assert buy["date"] == df.index[1]
 
 
 def test_higher_slippage_reduces_return_and_records_slippage_costs():
