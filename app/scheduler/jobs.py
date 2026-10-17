@@ -12,6 +12,34 @@ from app.db.repository import TradingRepository
 from app.pipeline.daily_radar import DailyRadarRequest, DailyRadarService
 
 
+def run_swing_research_job(*, experiment_id: int, config_hash: str, run_key: str,
+                           cutoff_at: str | None = None, observe: bool = False) -> dict[str, Any]:
+    """僅推進既有、人工確認的研究；不建立排程或啟動券商流程。"""
+    from datetime import timezone
+    from app.db.session import get_session_factory
+    from app.pipeline.swing_research import SwingResearchService
+    from app.services.subscription_research import build_swing_research_dependencies
+
+    with get_session_factory()() as session:
+        try:
+            service = SwingResearchService(session)
+            experiment = service.get_experiment(experiment_id)
+            if not config_hash or experiment["config_hash"] != config_hash:
+                raise ValueError("config_hash_mismatch")
+            if observe:
+                result = service.observe(experiment_id, datetime.now(timezone.utc).isoformat(), run_key)
+            else:
+                if not cutoff_at:
+                    raise ValueError("研究截止時間必須明確設定並包含時區")
+                result = service.run(experiment_id, run_key, cutoff_at,
+                                     **build_swing_research_dependencies())
+            session.commit()
+            return result
+        except Exception:
+            session.rollback()
+            raise
+
+
 def build_notifiers(channels: tuple[str, ...] = ("telegram",)) -> list[Notifier]:
     notifiers: list[Notifier] = []
     if "telegram" in channels:

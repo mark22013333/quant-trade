@@ -2079,9 +2079,130 @@ def cmd_signal_preview(args) -> None:
     print({"trade_date": result["trade_date"], "count": result["suggestions_count"], "suggestions": result["suggestions"]})
 
 
+def cmd_swing_research(args) -> None:
+    """研究 CLI 與 HTTP 使用同一服務；不默填交易設定、不自動部署。"""
+    from decimal import Decimal
+    from datetime import timezone
+    from fastapi.encoders import jsonable_encoder
+    from app.db.session import get_session_factory
+    from app.pipeline.swing_research import MissingConfiguration, SwingResearchService
+    from app.data.swing_source_import import InvalidSourceBundle
+    from app.security.reporting import sanitize_report_payload
+
+    try:
+        with get_session_factory()() as session:
+            try:
+                service = SwingResearchService(session)
+                action = args.swing_action
+                if action in {"source-preview", "source-import"}:
+                    from app.data.swing_source_import import preview_source_bundle, import_source_bundle
+                    bundle = json.loads(Path(args.bundle).read_text(encoding="utf-8"))
+                    if action == "source-preview":
+                        result = preview_source_bundle(bundle)
+                    else:
+                        result = import_source_bundle(session, bundle, expected_hash=args.bundle_hash,
+                                                      actor=args.actor, note=args.note)
+                elif action in {"preview", "create"}:
+                    config = json.loads(Path(args.config).read_text(encoding="utf-8"))
+                    if not isinstance(config, dict):
+                        raise ValueError("設定檔須為 JSON 物件")
+                    result = service.preview_config(config)
+                    if action == "create":
+                        if result["config_hash"] != args.config_hash:
+                            raise ValueError("config_hash_mismatch")
+                        result = service.create_experiment(config, args.actor, args.note)
+                elif action == "list":
+                    result = service.list_experiments(limit=args.limit)
+                elif action in {"repair-preview", "repair-apply"}:
+                    if action == "repair-preview":
+                        replacement = json.loads(Path(args.replacement).read_text(encoding="utf-8")) if args.replacement else None
+                        result = service.repair_preview(repair_key=args.repair_key, old_version_id=args.source_id,
+                            action=args.repair_action, actor=args.actor, reason=args.reason, replacement=replacement)
+                    else:
+                        result = service.repair_apply(preview_id=args.preview_id, repair_key=args.repair_key,
+                                                       actor=args.actor, expected_hash=args.expected_hash)
+                else:
+                    experiment = service.get_experiment(args.experiment_id)
+                    if experiment["config_hash"] != args.config_hash:
+                        raise ValueError("config_hash_mismatch")
+                    if action == "preflight":
+                        result = service.preflight(args.experiment_id, cutoff_at=args.cutoff_at)
+                    elif action == "compare":
+                        result = service.compare(args.experiment_id)
+                    elif action == "run":
+                        from app.services.subscription_research import build_swing_research_dependencies
+                        result = service.run(args.experiment_id, args.run_key, args.cutoff_at,
+                                             **build_swing_research_dependencies())
+                    elif action == "observe":
+                        result = service.observe(args.experiment_id, datetime.now(timezone.utc).isoformat(), args.run_key)
+                    elif action == "resume":
+                        result = service.resume(args.experiment_id, args.arm, args.actor, args.note,
+                                                datetime.now(timezone.utc).isoformat(), args.event_key)
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+        output = sanitize_report_payload(jsonable_encoder(result, custom_encoder={Decimal: str}))
+        print(json.dumps({"status": "ok", "data": output, "money_unit": "TWD_e4 (1 元 = 10000 e4)"}, ensure_ascii=False))
+    except (MissingConfiguration, InvalidSourceBundle) as exc:
+        raise RuntimeError("研究設定或來源包缺漏／不合法：" + ", ".join(exc.missing_fields)) from exc
+    except ValueError as exc:
+        if str(exc) == "market_revision_requires_repair_preview_and_repair_apply":
+            raise RuntimeError("同標的／日期／時段的行情已存在；請使用 repair-preview 與 repair-apply 保留來源修訂鏈，不可改鍵重匯。") from exc
+        if str(exc) in {"bundle_hash_mismatch", "bundle_key_content_conflict", "source_key_content_conflict", "bundle_incomplete_conflict"}:
+            raise RuntimeError("來源包雜湊或重跑鍵衝突：" + str(exc)) from exc
+        raise RuntimeError("研究操作失敗，請檢查設定雜湊、人工確認與研究資料表部署狀態。") from exc
+    except Exception as exc:
+        # 不把 SQL、來源原文或設定檔憑證串到終端錯誤。
+        raise RuntimeError("研究操作失敗，請檢查設定雜湊、人工確認與研究資料表部署狀態。") from exc
+
+
+def _add_swing_research_parser(sub) -> None:
+    parser = sub.add_parser("swing-research", help="收盤研究、三組紙上帳戶與可追溯資料修復")
+    actions = parser.add_subparsers(dest="swing_action", required=True)
+    for name in ("preview", "create", "list", "preflight", "run", "observe", "compare", "resume", "repair-preview", "repair-apply", "source-preview", "source-import"):
+        item = actions.add_parser(name)
+        item.set_defaults(func=cmd_swing_research)
+        if name in {"source-preview", "source-import"}:
+            item.add_argument("--bundle", required=True, help="管理者核驗的官方來源 JSON；不從網路下載")
+        if name == "source-import":
+            item.add_argument("--bundle-hash", required=True, help="source-preview 顯示的完整來源包雜湊")
+        if name in {"preview", "create"}:
+            item.add_argument("--config", required=True, help="完整 JSON 設定檔")
+        if name == "create":
+            item.add_argument("--config-hash", required=True, help="preview 顯示、人工確認的設定雜湊")
+        if name == "list":
+            item.add_argument("--limit", type=int, default=50)
+        if name in {"preflight", "run", "observe", "compare", "resume"}:
+            item.add_argument("--experiment-id", type=int, required=True)
+            item.add_argument("--config-hash", required=True)
+        if name in {"run", "preflight"}:
+            item.add_argument("--cutoff-at", required=True, help="明確含時區的 ISO 8601 截止時間")
+        if name in {"run", "observe"}:
+            item.add_argument("--run-key", required=True)
+        if name in {"create", "resume", "repair-preview", "repair-apply", "source-import"}:
+            item.add_argument("--actor", required=True)
+        if name in {"create", "resume", "source-import"}:
+            item.add_argument("--note", required=True)
+        if name == "resume":
+            item.add_argument("--arm", choices=["B", "C"], required=True)
+            item.add_argument("--event-key", required=True)
+        if name in {"repair-preview", "repair-apply"}:
+            item.add_argument("--repair-key", required=True)
+        if name == "repair-preview":
+            item.add_argument("--source-id", type=int, required=True)
+            item.add_argument("--repair-action", choices=["repair", "quarantine", "release"], required=True)
+            item.add_argument("--reason", required=True)
+            item.add_argument("--replacement", help="僅 repair 使用的來源版本 JSON 檔")
+        if name == "repair-apply":
+            item.add_argument("--preview-id", type=int, required=True)
+            item.add_argument("--expected-hash", required=True)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="TW swing trading CLI")
     sub = parser.add_subparsers(dest="command", required=True)
+    _add_swing_research_parser(sub)
 
     p = sub.add_parser("init-db", help="Initialize SQLite schema")
     p.set_defaults(func=cmd_init_db)

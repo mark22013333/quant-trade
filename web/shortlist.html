@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>短期投資雷達｜Quant Trade</title>
+  <title>收盤研究與三組紙上比較｜Quant Trade</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@600;700;900&display=swap" rel="stylesheet">
@@ -131,6 +131,39 @@
       .pick { grid-template-columns: 48px 1fr; }
       .rank { font-size: 26px; }
     }
+
+    .research { padding: 42px 0; border-bottom: 1px solid var(--ink); }
+    .research h2 { margin: 8px 0 12px; font: 700 clamp(26px,4vw,40px)/1.3 "Noto Serif TC",serif; }
+    .research h3 { margin: 22px 0 12px; font-size: 17px; }
+    .research p { line-height: 1.8; }
+    .research-head,.research-actions { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    .research-muted { color:var(--muted); font-size:13px; line-height:1.75; }
+    .research-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+    .research-field { display:flex; flex-direction:column; gap:7px; font-size:13px; }
+    .research-field input,.research-field select,.research-field textarea,.research-select { width:100%; min-height:43px; padding:10px; border:1px solid var(--line); background:#fffdf7; color:var(--ink); border-radius:2px; font:inherit; }
+    .research-field input:focus,.research-field select:focus,.research-field textarea:focus,.research-select:focus { outline:2px solid var(--green); outline-offset:2px; }
+    .research-field small { color:var(--muted); line-height:1.5; }
+    .research-box { padding:20px; border:1px solid var(--line); margin:18px 0; background:rgba(255,255,255,.35); }
+    fieldset.research-box { min-width:0; }
+    .research-box summary { cursor:pointer; font-weight:700; line-height:1.7; }
+    .research-check { display:flex; align-items:flex-start; gap:10px; font-size:13px; line-height:1.8; margin:16px 0; }
+    .research-check input { margin-top:6px; flex-shrink:0; }
+    .research-secondary { border:1px solid var(--ink); background:transparent; color:var(--ink); padding:11px 16px; font:600 13px "Noto Sans TC",sans-serif; cursor:pointer; }
+    .research-secondary:disabled { opacity:.45; cursor:not-allowed; }
+    .research-notice { border-left:3px solid var(--accent); padding:12px 16px; margin:18px 0; background:rgba(232,93,42,.08); white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.8; }
+    .research-account { padding:20px; border:1px solid var(--line); background:rgba(255,255,255,.5); }
+    .research-account h3 { margin:0 0 14px; }
+    .research-account dl { margin:0; display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px; }
+    .research-account dt { color:var(--muted); }.research-account dd { margin:0; text-align:right; overflow-wrap:anywhere; }
+    .research-scroll { overflow:auto; }.research-table { border-collapse:collapse; width:100%; font-size:13px; }
+    .research-table td,.research-table th { padding:12px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
+    .research-table th { color:var(--muted); font-weight:500; }
+    .research-json { max-height:300px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.7 monospace; }
+    .research-evidence { border-left:3px solid var(--green); padding:14px 18px; margin:12px 0; overflow-wrap:anywhere; }
+    .research-evidence blockquote { white-space:pre-wrap; margin:10px 0; font-size:13px; line-height:1.8; }
+    .research-hidden { display:none; }
+    @media(max-width:800px) { .research-grid { grid-template-columns:1fr 1fr; } .research-accounts { grid-template-columns:1fr; } }
+    @media(max-width:560px) { .research-grid { grid-template-columns:1fr; } .research { padding:28px 0; } .research-box { padding:14px; } }
   </style>
 </head>
 <body>
@@ -140,10 +173,122 @@
       <a class="advanced" href="/advanced">進階工具與紀錄 →</a>
     </header>
 
+
+    <section class="research" id="swing-research" aria-labelledby="swing-heading">
+      <div class="research-head">
+        <div><div class="eyebrow">After-close research / Paper portfolios</div><h2 id="swing-heading">收盤後研究，讓結果有依據</h2></div>
+        <a class="advanced" href="#legacy-shortlist">查看原有短期雷達 ↓</a>
+      </div>
+      <p class="research-muted">比較 A：ETF 買進持有、B：固定規則波段、C：相同波段加 AI 事件篩選。每組各有一萬元虛擬本金，C 排除後保留現金、不補選；這裡的三組帳戶與進階工具的 A/B/C 策略代號不同。研究操作不會送出實盤委託。</p>
+      <details class="research-box" id="swing-settings">
+        <summary>① 設定與人工確認｜設定變更會建立另一個實驗</summary>
+        <form id="swing-config-form">
+          <h3>研究範圍</h3>
+          <div class="research-grid">
+            <label class="research-field">實驗名稱／識別鍵<input name="experiment_key" required placeholder="例如：我的第一個波段觀察" maxlength="120"></label>
+            <label class="research-field">觀察方式<select name="mode" required><option value="">請選擇</option><option value="prospective">前瞻觀察（AI 效果主要證據）</option><option value="historical_exploratory">歷史探索（模型可能知道後續資訊）</option></select></label>
+            <label class="research-field">ETF 基準代碼<input name="etf_symbol" required placeholder="請自行選擇 ETF" maxlength="20"></label>
+            <label class="research-field">股票池<input name="stock_pool" required placeholder="股票代碼，以逗號分隔"><small>僅驗證這個股票池，不代表全市場。</small></label>
+            <label class="research-field">開始日<input name="start_date" type="date" required></label>
+            <label class="research-field">結束日<input name="end_date" type="date" required></label>
+            <label class="research-field">策略引擎版本<select name="strategy_version" required><option value="">請確認版本</option><option value="swing-v1">swing-v1（共同波段規則）</option></select></label>
+            <label class="research-field">持有交易日數<input name="hold_days" type="number" min="1" step="1" required placeholder="依你的規則設定"></label>
+            <label class="research-field">停損比例<input name="stop_loss_pct" type="number" min="0.0001" max="0.999999" step="any" required placeholder="小數比例，例如 0.10"><small>0.10 代表 10%，並非建議值。</small></label>
+            <label class="research-field">單檔最高投入（元）<input name="max_position" type="number" min="0.0001" max="10000" step="0.0001" required></label>
+            <label class="research-field">整組最高曝險（元）<input name="max_total_exposure" type="number" min="0.0001" max="10000" step="0.0001" required></label>
+            <label class="research-field">單筆風險預算（元）<input name="max_single_risk" type="number" min="0.0001" max="2000" step="0.0001" required></label>
+          </div>
+          <h3>費率與資料條件</h3>
+          <p class="research-muted">請依實際券商及商品確認，沒有填寫就不能啟動合格比較。費率使用小數比例；填入 0 也需要你確認。</p>
+          <div class="research-grid">
+            <label class="research-field">股票手續費率<input name="stock_commission_rate" type="number" min="0" max="1" step="any" required></label>
+            <label class="research-field">股票最低手續費（元）<input name="stock_minimum_fee" type="number" min="0" step="0.0001" required></label>
+            <label class="research-field">股票賣出稅率<input name="stock_sell_tax_rate" type="number" min="0" max="1" step="any" required></label>
+            <label class="research-field">ETF 手續費率<input name="etf_commission_rate" type="number" min="0" max="1" step="any" required></label>
+            <label class="research-field">ETF 最低手續費（元）<input name="etf_minimum_fee" type="number" min="0" step="0.0001" required></label>
+            <label class="research-field">ETF 賣出稅率<input name="etf_sell_tax_rate" type="number" min="0" max="1" step="any" required></label>
+            <label class="research-field">滑價（基點）<input name="slippage_bps" type="number" min="0" step="any" required><small>1 基點 = 0.01%。</small></label>
+            <label class="research-field">暖機行情筆數<input name="warmup_bars" type="number" min="1" step="1" required></label>
+            <label class="research-field">AI 排除結果觀察交易日數<input name="observation_sessions" type="number" min="1" step="1" required></label>
+          </div>
+          <h3>共同波段策略</h3>
+          <p class="research-muted">請逐項決定啟用與權重，並填寫啟用策略的參數；B/C 使用完全相同的規則。啟用策略均視為必要，缺資料即阻擋；停用策略不參與投票。以下留白由你決定，未提供參數建議值。</p>
+          <label class="research-field">加權通過門檻（0–1）<input name="signal_threshold" type="number" min="0" max="1" step="any" required></label>
+          <div class="research-grid">
+            <fieldset class="research-box"><legend>動能趨勢</legend>
+              <label class="research-field">是否啟用<select name="momentum_enabled" required><option value="">請選擇</option><option value="yes">啟用</option><option value="no">停用</option></select></label>
+              <label class="research-field">投票權重<input name="momentum_weight" type="number" min="0" step="any" data-strategy="momentum"></label>
+              <label class="research-field">成交量倍數<input name="volume_multiplier" type="number" min="0" max="20" step="any" data-strategy="momentum"></label>
+              <small class="research-muted">20／60 日均線、20 日通道突破及 5 日均量，公式封存在策略版本內。</small>
+            </fieldset>
+            <fieldset class="research-box"><legend>均值回歸</legend>
+              <label class="research-field">是否啟用<select name="mean_enabled" required><option value="">請選擇</option><option value="yes">啟用</option><option value="no">停用</option></select></label>
+              <label class="research-field">投票權重<input name="mean_weight" type="number" min="0" step="any" data-strategy="mean"></label>
+              <label class="research-field">RSI14 低檔門檻<input name="rsi_threshold" type="number" min="0" max="100" step="any" data-strategy="mean"></label>
+              <small class="research-muted">搭配布林下緣反彈及 60 日均線條件。</small>
+            </fieldset>
+            <fieldset class="research-box"><legend>籌碼流向</legend>
+              <label class="research-field">是否啟用<select name="chip_enabled" required><option value="">請選擇</option><option value="yes">啟用</option><option value="no">停用</option></select></label>
+              <label class="research-field">投票權重<input name="chip_weight" type="number" min="0" step="any" data-strategy="chip"></label>
+              <label class="research-field">買超門檻方式<select name="chip_mode" data-strategy="chip"><option value="">請選擇</option><option value="absolute">五日合計買超量</option><option value="zscore">標準分數</option><option value="relative_volume">買超量／成交量</option></select></label>
+              <label class="research-field">五日合計買超量門檻<input name="net_buy_threshold" type="number" step="any" data-chip-mode="absolute"></label>
+              <label class="research-field">標準分數視窗<input name="net_buy_zscore_window" type="number" min="5" max="500" step="1" data-chip-mode="zscore"></label>
+              <label class="research-field">標準分數門檻<input name="net_buy_zscore_threshold" type="number" min="-10" max="10" step="any" data-chip-mode="zscore"></label>
+              <label class="research-field">買超量／成交量門檻<input name="net_buy_volume_ratio_threshold" type="number" min="0" max="1" step="any" data-chip-mode="relative_volume"></label>
+              <small class="research-muted">需要截止前可得的法人買超與籌碼集中度資料，行情本身不足以代替。</small>
+            </fieldset>
+          </div>
+          <div class="research-notice">已確認的資金規則：每組本金 10,000 元；B/C 淨值不高於 8,000 元就停止新增，既有退出規則繼續，恢復需人工確認。A 維持買進持有並記錄門檻穿越。<br>共同成交政策：下一合格交易時段、T+2 交易日交割、原始價格搭配現金股利／拆分、日線零股近似、金額四捨五入至萬分之一元。缺必要資料即阻擋，不補造行情。</div>
+          <div class="research-actions"><button class="research-secondary" id="swing-preview" type="submit">檢查設定，產生確認版本</button><span class="research-muted">實際程式版本由伺服器封存。</span></div>
+        </form>
+        <div id="swing-approval" class="research-hidden">
+          <h3>確認這份設定</h3><p class="research-muted" id="swing-preview-hash"></p>
+          <details><summary>檢視完整設定</summary><pre class="research-json" id="swing-preview-config"></pre></details>
+          <div class="research-grid" style="margin-top:16px">
+            <label class="research-field">確認人<input id="swing-confirmed-by" autocomplete="name" placeholder="請輸入姓名或紀錄用名稱"></label>
+            <label class="research-field">確認說明<input id="swing-confirmation-note" placeholder="請說明已核對的費率及規則"></label>
+          </div>
+          <label class="research-check"><input id="swing-config-confirmed" type="checkbox"><span>我已核對上方設定與雜湊，了解歷史探索限制、零股成交近似及暫停規則，確認以這份版本建立紙上實驗。</span></label>
+          <button class="refresh" id="swing-create" type="button">確認並建立三組紙上帳戶</button>
+        </div>
+      </details>
+      <div class="research-head"><h3>② 選擇實驗與檢查資料</h3><button class="research-secondary" id="swing-reload" type="button">重新整理研究紀錄</button></div>
+      <label class="research-field">已封存的設定版本<select id="swing-experiment" class="research-select"><option value="">正在載入…</option></select></label>
+      <div class="research-notice" id="swing-status" role="status" aria-live="polite">正在檢查研究服務…</div>
+      <div id="swing-current" class="research-hidden">
+        <p class="research-muted" id="swing-current-meta"></p>
+        <div id="swing-coverage" class="research-box"></div>
+        <div class="research-grid">
+          <label class="research-field">研究截止時間<input id="swing-cutoff" type="datetime-local"><small>以台灣時間（UTC+8）解讀；覆蓋檢查與研究使用相同截止。更新紙上帳本另由伺服器記錄目前時間。</small></label>
+          <label class="research-field">研究／帳本更新識別鍵<input id="swing-run-key" placeholder="例如：我的研究日期-收盤"><small>每次新研究或帳本更新使用新鍵；同一操作以原鍵重試，避免重複記帳。</small></label>
+        </div>
+        <div class="research-actions" style="margin-top:18px"><button class="research-secondary" id="swing-preflight" type="button">依截止時間檢查覆蓋</button><button class="refresh" id="swing-run" type="button" disabled>依已確認設定執行研究</button><button class="research-secondary" id="swing-observe" type="button">更新紙上帳本</button></div>
+        <p class="research-muted">研究先封存候選與 AI 判斷；之後按「更新紙上帳本」，由共同成交規則檢查當下已取得的行情、退出、交割與估值。缺必要行情不會產生假成交。</p>
+        <h3>③ 三組紙上比較</h3><p class="research-muted" id="swing-comparison-note">尚無可比較結果。未完成的觀察不會當成 AI 有效的證據。</p>
+        <div class="research-grid research-accounts" id="swing-accounts"></div>
+        <div id="swing-result-context" class="research-box"></div>
+        <h3>AI 決策、原文與拒絕原因</h3><div id="swing-decisions"></div>
+        <h3>成交、拒絕與人工確認紀錄</h3><div id="swing-execution-log" class="research-box"></div>
+        <details class="research-box"><summary>查看人工確認、執行及比較完整紀錄</summary><pre class="research-json" id="swing-audit"></pre></details>
+        <details class="research-box"><summary>人工恢復 B／C 組新增部位</summary>
+          <p class="research-muted">淨值反彈不會自動恢復；恢復後仍須通過單筆及組合限制。AI 故障期間錯過的決策不回填。</p>
+          <div class="research-grid">
+            <label class="research-field">恢復組別<select id="swing-resume-arm"><option value="">請選擇</option><option value="B">B 固定規則波段</option><option value="C">C 波段加 AI</option></select></label>
+            <label class="research-field">確認人<input id="swing-resume-actor"></label>
+            <label class="research-field">恢復理由<input id="swing-resume-note"></label>
+          </div>
+          <label class="research-check"><input id="swing-resume-confirmed" type="checkbox"><span>我已確認目前實驗設定雜湊及風險狀態，同意恢復所選組別的新增資格。</span></label>
+          <button class="research-secondary" id="swing-resume" type="button">記錄人工確認並嘗試恢復</button>
+        </details>
+        <div class="research-box" id="swing-feature-guidance"><h3>功能取捨</h3><p class="research-muted">研究主線沿用共同策略、來源證據與三組帳本。既有短期雷達、進階策略及 Shioaji 人工功能保留為選用工具；尚無比較證據的功能標為待驗證，不提前刪除。</p></div>
+      </div>
+    </section>
+    <div id="legacy-shortlist"></div>
+
     <section class="hero">
       <div>
         <div class="eyebrow">1–3 month investment radar</div>
-        <h1>今天值得研究的<br>十檔台股</h1>
+        <h1>原有短期雷達<br>研究候選名單</h1>
         <p class="lede">從上市、上櫃普通股中，以量價、趨勢、籌碼、基本面與風險品質排序；AI 只補充可驗證的事件脈絡，不拿新聞情緒亂拉分數。</p>
       </div>
       <aside class="status-card">
@@ -173,6 +318,7 @@
     const token = localStorage.getItem('quant_trade_control_panel_token') || '';
     const headers = token ? {'X-Control-Panel-Token': token} : {};
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+    const safeHttps = value => { try { const parsed = new URL(value); return parsed.protocol === 'https:' && !parsed.username && !parsed.password ? parsed.href : ''; } catch { return ''; } };
     const pct = (value) => value == null ? '—' : `${(Number(value) * 100).toFixed(1)}%`;
     const aiLabels = {
       normal: '正常運作', partial: '部分完成', pending: '等待分析', missing: '未安裝 Codex',
@@ -182,8 +328,19 @@
 
     async function api(url, options = {}) {
       const response = await fetch(url, {...options, headers: {...headers, ...(options.headers || {})}});
-      const payload = await response.json();
-      if (!response.ok || payload.status === 'error') throw new Error(payload.error || '服務回應失敗');
+      let payload;
+      try { payload = await response.json(); }
+      catch { throw new Error(`服務未提供可讀取的回應（HTTP ${response.status}），請稍後以相同識別鍵重試。`); }
+      if (!response.ok || payload.status === 'error') {
+        const detail = payload.detail;
+        const missing = detail?.missing_fields;
+        const message = missing?.length ? `設定缺少：${missing.map(field => typeof field === 'string' ? field : JSON.stringify(field)).join('、')}`
+          : payload.error === 'swing_schema_not_migrated' ? '研究資料表尚未部署，請先完成資料庫備份與 Alembic 遷移。現有研究未執行。'
+          : response.status === 409 ? '設定版本或重跑內容衝突，請重新載入實驗並核對原識別鍵。變更設定需建立新實驗。'
+          : typeof detail === 'string' ? detail
+          : payload.message || payload.error || detail?.message || (detail ? JSON.stringify(detail) : `服務回應失敗（${response.status}）`);
+        throw new Error(message);
+      }
       return payload.data ?? payload;
     }
 
@@ -209,7 +366,7 @@
       listEl.innerHTML = items.map((item, index) => {
         const reasons = humanReason(item.reason_tags);
         const riskTags = item.risk_tags || [];
-        const sources = (item.sources || []).slice(0, 3);
+        const sources = (item.sources || []).filter(source => safeHttps(source.url)).slice(0, 3);
         const summary = item.ai_summary || '本次未取得合格的 AI 事件摘要，排名維持純量化結果。';
         return `
           <article class="pick" style="--i:${index}">
@@ -231,7 +388,7 @@
               <div class="sentiment ${escapeHtml(item.ai_sentiment)}">${sentimentLabel[item.ai_sentiment] || '未判定'} · AI ${escapeHtml(item.ai_status)}</div>
               <ul class="source-list">
                 ${sources.length ? sources.map(source => `
-                  <li><a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title)}</a>
+                  <li><a href="${escapeHtml(safeHttps(source.url))}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title)}</a>
                   <time>${escapeHtml(String(source.published_at || '').slice(0,10))}</time></li>`).join('') : '<li class="summary muted">本次沒有通過驗證的新聞引用</li>'}
               </ul>
             </div>
@@ -279,6 +436,343 @@
         refreshBtn.textContent = '重新分析全市場';
       }
     });
+
+    const swing = {experiments: [], current: null, preview: null, preflight: null, preflightKey: null, comparison: null, loading: false, configRevision: 0};
+    const swingEl = id => document.getElementById(`swing-${id}`);
+    const swingNames = {A: 'A · ETF 買進持有', B: 'B · 固定規則波段', C: 'C · 波段加 AI 事件篩選'};
+    const swingStateLabels = {complete:'完整', incomplete:'不完整', blocked:'已阻擋', paused:'停止新增', active:'可依規則新增', confirmed:'已人工確認', unavailable:'無法取得', evidence_rejected:'證據拒收', missing:'缺少資料', stale:'資料過期', allow:'通過', veto:'AI 排除', exclude:'AI 排除', pending:'等待處理', ready:'可執行', unknown:'尚未確認', not_requested:'未要求 AI', descriptive_observation:'描述性觀察', risk_paused:'風險暫停', not_established:'尚未證實',observed:'已更新觀察',frozen:'已封存研究',completed:'已完成'};
+    const swingReasonLabels = {historical_ai_model_knowledge_leakage:'歷史模型可能知道後續資訊',no_frozen_research:'尚無封存研究',incomplete_coverage:'必要資料覆蓋不完整',ai_or_data_incomplete:'AI 或資料觀察不完整',valuation_period_not_aligned:'三組估值期間未對齊',opportunity_followup_incomplete:'排除機會尚未完成固定期間追蹤',insufficient_sample:'樣本不足',calendar:'交易日曆不完整',corporate_actions:'公司行動未完整核對',verified_sources:'缺少可追溯的已查證來源',engine_version_requires_new_confirmation:'程式版本已變更，需重新確認並建立新實驗'};
+    const swingText = value => value == null ? '尚無資料' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+    const swingLabel = value => swingStateLabels[value] || swingText(value);
+    const swingJSON = value => JSON.stringify(value, null, 2);
+    function swingNotice(message) { swingEl('status').textContent = message; }
+    function swingReason(value) {
+      const reasons = {calendar_or_corporate_action_coverage:'交易日曆或公司行動覆蓋不足',observation_calendar:'觀察交易日不足',missing_next_session:'缺少下一合格交易時段',expired_decision:'決策已逾可成交時段',unavailable_open_input:'開盤資料尚不可得',missing_prior_liquidity:'缺少先前可得流動性',missing_settlement_calendar:'交割日曆不足',risk_paused:'淨值風險暫停',ai_blocked:'AI 阻擋新增',single_risk_limit:'超過單筆風險預算',portfolio_risk_limit:'超過單檔或組合曝險上限',insufficient_cash:'共用可用資金不足',insufficient_sellable_position:'可賣股數不足',incomplete_execution_sources:'成交來源不完整',post_cost_risk_limit:'計入成本後將觸及風險門檻',next_session_open:'下一合格時段開盤近似成交',ai_not_allowed:'未取得 AI 通過決策',ai_unavailable:'AI 暫時無法使用',deadline_expired:'AI 回應超過固定期限',corporate_action_followup_requires_cashflow_basis:'期間包含公司行動，尚缺一致現金流口徑'};
+      const prefixes = {warmup:'暖機筆數不足',market:'行情日期覆蓋不足',ohlcv:'行情欄位不齊',fundamental:'必要基本面缺漏',untrusted_source:'來源未通過查證',entry_open:'新增部位缺開盤行情',exit_open:'退出缺開盤行情',valuation:'未取得持股估值行情'};
+      const key = String(value).split(':')[0];
+      return swingReasonLabels[value] || reasons[value] || (prefixes[key] ? `${prefixes[key]}：${String(value).slice(key.length + 1)}` : swingText(value));
+    }
+    function swingEventTime(microseconds) {
+      if (microseconds == null) return '時間未知';
+      const timestamp = new Date(Number(microseconds) / 1000);
+      return Number.isNaN(timestamp.getTime()) ? '時間未知' : `${timestamp.toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})}（台灣時間）`;
+    }
+    function swingRenderExecutionLog() {
+      const accounts = swing.current?.accounts || [];
+      const trades = accounts.flatMap(account => (account.events || []).filter(event => ['buy','sell','reject','human_resume','risk_breach'].includes(event.event_kind)).map(event => ({...event,arm:account.arm})));
+      const confirmations = (swing.current?.events || []).filter(event => event.kind === 'human_ack');
+      swingEl('execution-log').innerHTML = `${trades.length ? `<div class="research-scroll"><table class="research-table"><thead><tr><th>時間／組別</th><th>狀態／原因</th><th>標的與數量</th><th>人工紀錄</th></tr></thead><tbody>${trades.map(event => {
+        const result = event.detail?.result || {}; const input = event.detail?.input || {};
+        const state = ({buy:'買進近似成交',sell:'賣出近似成交',reject:'拒絕成交',human_resume:'人工恢復',risk_breach:'風險門檻穿越'})[event.event_kind];
+        return `<tr><td>${escapeHtml(swingEventTime(event.effective_at_us))}<br>${escapeHtml(event.arm)} 組</td><td>${escapeHtml(state)}<br>${escapeHtml(swingReason(result.reason || input.reason || '詳見事件紀錄'))}</td><td>${escapeHtml(input.symbol || '—')}<br>${escapeHtml(result.quantity ?? input.quantity ?? '—')} 股</td><td>${escapeHtml(event.actor || input.actor || '—')}<br>${escapeHtml(input.note || '')}</td></tr>`;
+      }).join('')}</tbody></table></div>` : '<p class="research-muted">尚無成交、拒絕或恢復事件；未產生成交不代表條件已通過。</p>'}${confirmations.map(event => `<p class="research-muted">人工確認：${escapeHtml(event.actor || '未知')}／${escapeHtml(swingEventTime(event.created_at_us))}；${escapeHtml(event.detail?.note || '詳見封存紀錄')}</p>`).join('')}`;
+    }
+    function swingCutoff() {
+      const time = swingEl('cutoff').value;
+      if (!time) throw new Error('請先填寫研究截止時間；不會自動沿用歷史期間結束日。');
+      return `${time.length === 16 ? time + ':00' : time}+08:00`;
+    }
+    function swingPreflightKey() { return `${swingExperimentId(swing.current)}:${swingEl('cutoff').value}`; }
+    function swingUpdateRunAvailability() {
+      const preflight = swing.preflight;
+      const ready = preflight?.qualified === true && preflight?.status === 'complete';
+      swingEl('run').disabled = swing.loading || !ready || swing.preflightKey !== swingPreflightKey();
+    }
+    function swingConfigureStrategyFields() {
+      const form = document.getElementById('swing-config-form');
+      form.querySelectorAll('[data-strategy]').forEach(input => {
+        const enabled = form.elements[`${input.dataset.strategy}_enabled`].value === 'yes';
+        input.disabled = !enabled; input.required = enabled;
+      });
+      form.querySelectorAll('[data-chip-mode]').forEach(input => {
+        const enabled = form.elements.chip_enabled.value === 'yes' && form.elements.chip_mode.value === input.dataset.chipMode;
+        input.disabled = !enabled; input.required = enabled;
+      });
+    }
+    function swingMoney(value) {
+      if (value == null || value === '') return '尚無估值';
+      try {
+        const amount = BigInt(String(value));
+        const negative = amount < 0n;
+        const absolute = negative ? -amount : amount;
+        const whole = (absolute / 10000n).toLocaleString('zh-TW');
+        const fraction = String(absolute % 10000n).padStart(4, '0').replace(/0+$/, '');
+        return `${negative ? '-' : ''}${whole}${fraction ? '.' + fraction : ''} 元`;
+      } catch { return '金額格式異常'; }
+    }
+    function swingToE4(value) {
+      const match = /^(\d+)(?:\.(\d{1,4}))?$/.exec(String(value).trim());
+      if (!match) throw new Error('金額請填入非負數，最多四位小數。');
+      const scaled = BigInt(match[1]) * 10000n + BigInt((match[2] || '').padEnd(4, '0'));
+      if (scaled > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('金額超出可安全傳送範圍。');
+      return Number(scaled);
+    }
+    function swingReadConfig() {
+      const form = document.getElementById('swing-config-form');
+      if (!form.reportValidity()) return null;
+      const fields = new FormData(form);
+      const get = key => String(fields.get(key) || '').trim();
+      const integer = key => { const n = Number(get(key)); if (!Number.isSafeInteger(n) || n < 1) throw new Error('交易日數與筆數請填正整數。'); return n; };
+      const number = key => { const n = Number(get(key)); if (!get(key) || !Number.isFinite(n)) throw new Error('啟用策略的參數與權重都需要填寫。'); return n; };
+      const strategies = {momentum:'momentum_trend',mean:'mean_reversion',chip:'chip_flow'};
+      const parameters = {enabled:{},weights:{},threshold:number('signal_threshold'),params:{},required_strategies:[]};
+      for (const [short,name] of Object.entries(strategies)) {
+        const enabled = get(`${short}_enabled`) === 'yes';
+        parameters.enabled[name] = enabled;
+        parameters.weights[name] = enabled ? number(`${short}_weight`) : 0;
+        if (enabled) parameters.required_strategies.push(name);
+      }
+      if (!parameters.required_strategies.length || !Object.values(parameters.weights).some(weight => weight > 0)) throw new Error('至少啟用一項策略，且啟用策略合計權重須大於零。');
+      if (parameters.enabled.momentum_trend) parameters.params.momentum_trend = {volume_multiplier:number('volume_multiplier')};
+      if (parameters.enabled.mean_reversion) parameters.params.mean_reversion = {rsi_threshold:number('rsi_threshold')};
+      if (parameters.enabled.chip_flow) {
+        const mode = get('chip_mode');
+        const chip = {net_buy_threshold_mode:mode};
+        if (mode === 'absolute') chip.net_buy_threshold = number('net_buy_threshold');
+        else if (mode === 'zscore') { chip.net_buy_zscore_window = integer('net_buy_zscore_window'); chip.net_buy_zscore_threshold = number('net_buy_zscore_threshold'); }
+        else if (mode === 'relative_volume') chip.net_buy_volume_ratio_threshold = number('net_buy_volume_ratio_threshold');
+        else throw new Error('請選擇籌碼門檻方式。');
+        parameters.params.chip_flow = chip;
+      }
+      const fees = kind => ({commission_rate:get(`${kind}_commission_rate`),minimum_fee_e4:swingToE4(get(`${kind}_minimum_fee`)),sell_tax_rate:get(`${kind}_sell_tax_rate`)});
+      return {
+        experiment_key:get('experiment_key'), mode:get('mode'), etf_symbol:get('etf_symbol'),
+        stock_pool:[...new Set(get('stock_pool').split(/[,，\s]+/).filter(Boolean))],
+        start_date:get('start_date'), end_date:get('end_date'), initial_cash_e4:100000000, stop_equity_e4:80000000,
+        strategy:{version:get('strategy_version'),hold_days:integer('hold_days'),parameters,stop_loss_pct:get('stop_loss_pct')},
+        risk:{max_position_e4:swingToE4(get('max_position')),max_total_exposure_e4:swingToE4(get('max_total_exposure')),max_single_risk_e4:swingToE4(get('max_single_risk'))},
+        fees:{stock:fees('stock'),etf:fees('etf')},
+        execution:{slippage_bps:get('slippage_bps'),settlement_sessions:2,price_basis:'raw',corporate_actions:'cash_and_split',odd_lot_model:'daily_proxy',rounding:'ROUND_HALF_UP'},
+        data_policy:{warmup_bars:integer('warmup_bars'),missing_required:'block'},observation_sessions:integer('observation_sessions'),code_version:'swing-v1'
+      };
+    }
+    function swingInvalidatePreview() {
+      swing.configRevision += 1;
+      swing.preview = null;
+      swingEl('approval').classList.add('research-hidden');
+      swingEl('config-confirmed').checked = false;
+    }
+    function swingExperimentConfig(record) {
+      let config = record?.config || record?.config_json || {};
+      if (typeof config === 'string') { try { config = JSON.parse(config); } catch { return {}; } }
+      return config;
+    }
+    function swingExperimentId(record) { return record?.experiment_id ?? record?.id; }
+    function swingMode(mode) { return mode === 'historical_exploratory' ? '歷史探索｜可能含模型既有知識，不能作為 AI 效果主證據' : mode === 'prospective' ? '前瞻觀察｜仍須累積完整樣本才可判斷 AI 效果' : '觀察方式尚未確認'; }
+    function swingRenderPreflight(data) {
+      swing.preflight = data;
+      swing.preflightKey = swingPreflightKey();
+      const coverage = data?.coverage || data?.coverage_report || data || {};
+      const status = coverage.status || data?.coverage_status || (data?.ready === true ? 'ready' : data?.ready === false ? 'blocked' : 'unknown');
+      const fields = coverage.missing_fields || coverage.missing || data?.missing_fields || data?.blockers || [];
+      const counts = Object.entries(coverage.bar_counts || {});
+      swingEl('coverage').innerHTML = `<strong>資料覆蓋：${escapeHtml(swingLabel(status))}</strong><p class="research-muted">檢查截止：${escapeHtml(swingEl('cutoff').value)}（台灣時間）。必要檢查涵蓋行情、暖機期、股票池、ETF、交易日曆、公司行動與資料新鮮度。未知或缺漏不代表已通過。</p>${fields.length ? `<div class="research-notice">${escapeHtml(Array.isArray(fields) ? fields.map(swingReason).join('；') : swingText(fields))}</div>` : ''}${counts.length ? `<div class="research-scroll"><table class="research-table"><thead><tr><th>標的</th><th>已取得行情筆數</th></tr></thead><tbody>${counts.map(([symbol,count]) => `<tr><td>${escapeHtml(symbol)}</td><td>${escapeHtml(swingText(count))}</td></tr>`).join('')}</tbody></table></div>` : ''}<details><summary>覆蓋檢查完整明細</summary><pre class="research-json">${escapeHtml(swingJSON(data))}</pre></details>`;
+      swingUpdateRunAvailability();
+    }
+    function swingValue(record, keys) {
+      for (const key of keys) if (record?.[key] !== undefined && record[key] !== null) return record[key];
+      return null;
+    }
+    function swingRenderComparison(data) {
+      swing.comparison = data;
+      const config = swingExperimentConfig(swing.current);
+      const metrics = data?.accounts || data?.arms || data?.portfolios || data?.groups || [];
+      const rows = Array.isArray(metrics) ? metrics : Object.entries(metrics).map(([arm,row]) => ({arm,...row}));
+      const accounts = swing.current?.accounts || [];
+      swingEl('comparison-note').textContent = `${swingMode(data?.mode || config.mode)}。${data?.ai_effectiveness?.message || data?.message || data?.interpretation || '績效由伺服器帳務計算；沒有合格觀察結果時保留未知，不把初始本金當成已驗證報酬。'}${data?.status ? ' 比較狀態：' + swingLabel(data.status) + '。' : ''}`;
+      swingEl('accounts').innerHTML = ['A','B','C'].map(arm => {
+        const metricsRow = rows.find(row => row.arm === arm) || {};
+        const account = accounts.find(row => row.arm === arm) || {};
+        const row = {...account,...metricsRow,...(metricsRow.metrics || {})};
+        const fields = [
+          ['起始虛擬本金',swingMoney(swingValue(row,['initial_cash_e4']))],
+          ['含成本淨值',swingMoney(swingValue(row,['net_equity_e4','equity_e4']))],
+          ['可用現金',swingMoney(swingValue(row,['cash_available_e4','available_cash_e4']))],
+          ['淨報酬',swingValue(row,['net_return','net_return_ratio']) == null ? '尚無結果' : pct(swingValue(row,['net_return','net_return_ratio']))],
+          ['相對 A 差額',swingValue(row,['vs_a_return','excess_return_vs_a','relative_return','benchmark_difference']) == null ? '尚無結果' : pct(swingValue(row,['vs_a_return','excess_return_vs_a','relative_return','benchmark_difference']))],
+          ['最大回撤',swingValue(row,['max_drawdown','maximum_drawdown']) == null ? '尚無結果' : pct(swingValue(row,['max_drawdown','maximum_drawdown']))],
+          ['平均曝險',swingValue(row,['average_exposure','exposure','exposure_ratio']) == null ? '尚無結果' : pct(swingValue(row,['average_exposure','exposure','exposure_ratio']))],
+          ['未平倉市值',swingMoney(swingValue(row,['market_value_e4']))],
+          ['費稅與滑價',swingMoney(swingValue(row,['total_cost_e4','costs_e4','cost_e4']))],
+          ['手續費／交易稅',`${swingMoney(row.fees_e4)}／${swingMoney(row.tax_e4)}`],
+          ['滑價成本',swingMoney(row.slippage_e4)],
+          ['交易次數',swingText(swingValue(row,['trade_count','trades_count']))],
+          ['新增部位狀態',row.risk_paused === true || row.paused === true || row.halted === true ? '風險停止新增｜需人工恢復' : row.ai_blocked === true ? 'AI 阻擋新增｜觀察不完整' : arm === 'A' ? '維持買進持有規則' : metricsRow.arm ? '仍須通過資料與風險檢查' : '尚未取得比較狀態'],
+          ['8,000 元門檻穿越',row.threshold_crossings == null ? '尚無結果' : `${row.threshold_crossings} 次`]
+        ];
+        return `<article class="research-account"><h3>${swingNames[arm]}</h3><dl>${fields.map(([label,value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}</dl><p class="research-muted">${escapeHtml(row.pause_reason || row.halt_reason || row.reason || (arm === 'A' ? '買進持有基準，揭露門檻穿越。' : '淨值 ≤ 8,000 元停止新增，既有退出規則繼續。'))}${row.risk_paused && row.ai_blocked ? ' AI 亦阻擋新增，人工解除風險暫停不會略過 AI 檢查。' : ''}${row.trade_count === 0 ? ' 目前零筆交易，樣本不足。' : ''}</p></article>`;
+      }).join('');
+      const coverage = Array.isArray(data?.coverage) ? data.coverage : [];
+      const outcomes = data?.opportunity_outcomes || [];
+      const reasons = data?.ai_effectiveness?.reasons || [];
+      const counts = data?.ai_outcomes || {};
+      swingEl('result-context').innerHTML = `<h3>觀察完整度與時間成本</h3><p class="research-muted">期間：${escapeHtml(data?.period?.start_date || config.start_date || '未知')} 至 ${escapeHtml(data?.period?.end_date || config.end_date || '未知')}；三組估值${data?.period?.aligned === true ? '已對齊' : '尚未確認對齊'}。成交採日線零股近似，不代表實際可成交。</p><p class="research-muted">研究耗時：${data?.research_elapsed_ms == null ? '尚無紀錄' : escapeHtml(String(data.research_elapsed_ms)) + ' 毫秒（伺服器紀錄）'}。AI 結論：${escapeHtml(swingLabel(data?.ai_effectiveness?.claim || 'not_established'))}。</p>${reasons.length ? `<div class="research-notice">${escapeHtml(reasons.map(swingReason).join('；'))}</div>` : ''}<p class="research-muted">AI 決策：${Object.entries(counts).map(([state,count]) => `${escapeHtml(swingLabel(state))} ${escapeHtml(count)} 筆`).join(' ／ ') || '尚無紀錄'}。排除後保留現金，不補選。</p>${coverage.length ? `<h3>各批次覆蓋</h3><div class="research-scroll"><table class="research-table"><thead><tr><th>批次／截止</th><th>狀態</th><th>缺項</th></tr></thead><tbody>${coverage.map(batch => `<tr><td>${escapeHtml(batch.batch_id)}<br>${escapeHtml(batch.cutoff_at)}</td><td>${escapeHtml(swingLabel(batch.status))}</td><td>${escapeHtml((batch.detail?.missing_fields || []).map(swingReason).join('；') || '未列缺項，仍須檢視整體觀察條件')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="research-muted">尚無研究批次覆蓋，不視為已通過。</p>'}${outcomes.length ? `<h3>固定期間機會追蹤</h3>${outcomes.map(outcome => `<article><strong>決策 ${escapeHtml(outcome.decision_id)} · ${escapeHtml(swingLabel(outcome.status))}</strong><p class="research-muted">${escapeHtml(outcome.outcome?.start_session || '未知')} 至 ${escapeHtml(outcome.outcome?.end_session || '未知')}，${escapeHtml(outcome.horizon_sessions)} 個交易日；機會報酬 ${outcome.outcome?.opportunity_return == null ? '尚無合格結果' : escapeHtml(pct(outcome.outcome.opportunity_return))}。${escapeHtml(outcome.outcome?.interpretation || '')}${outcome.outcome?.reason ? '；' + escapeHtml(swingReason(outcome.outcome.reason)) : ''}</p><details><summary>追蹤完整紀錄</summary><pre class="research-json">${escapeHtml(swingJSON(outcome.outcome || outcome))}</pre></details></article>`).join('')}` : '<p class="research-muted">尚無固定期間追蹤結果；不能以排除筆數推定 AI 有幫助。</p>'}`;
+      swingEl('feature-guidance').innerHTML = '<h3>功能取捨與依賴</h3>' + (Array.isArray(data?.feature_recommendations) ? data.feature_recommendations.map(item => `<article><strong>${escapeHtml(item.feature)} · ${escapeHtml(({retain:'保留',consolidate:'整併共同流程',optional_pending_validation:'選用／待驗證'})[item.action] || item.action)}</strong><p class="research-muted">依賴：${escapeHtml((item.dependencies || []).join('、'))}。${escapeHtml(item.message || (typeof item.evidence === 'string' ? item.evidence : '比較證據仍待驗證。'))}</p><details><summary>判斷依據</summary><pre class="research-json">${escapeHtml(swingJSON(item.evidence))}</pre></details></article>`).join('') : '<p class="research-muted">尚無本實驗的比較證據，原有策略、盤中工具及 Shioaji 人工流程保留，功能取捨待驗證。</p>');
+      const decisions = data?.decisions || data?.candidate_decisions || swing.current?.decisions || [];
+      swingRenderDecisions(decisions);
+      swingRenderExecutionLog();
+      swingEl('audit').textContent = swingJSON({experiment:swing.current,preflight:swing.preflight,comparison:data});
+    }
+    function swingRenderDecisions(decisions) {
+      if (!Array.isArray(decisions) || !decisions.length) { swingEl('decisions').innerHTML = '<p class="research-muted">尚無封存決策。AI 原文、查證與截止時間未齊備時，不會顯示為合格證據。</p>'; return; }
+      swingEl('decisions').innerHTML = decisions.map(decision => {
+        let evidence = decision.ai || decision.evidence || decision.evidence_json || {};
+        if (typeof evidence === 'string') { try { evidence = JSON.parse(evidence); } catch { evidence = {}; } }
+        const sources = evidence.verification?.sources || decision.sources || evidence.sources || [];
+        const raw = evidence.raw || {};
+        const reason = decision.reason || decision.rejection_reason || decision.reason_code || decision.ai_summary || raw.summary || evidence.summary || '未提供原因，請查看完整紀錄。';
+        const errors = evidence.verification?.errors || [];
+        return `<article class="research-evidence"><strong>${escapeHtml(decision.symbol || '未標示標的')} · ${escapeHtml(swingLabel(decision.ai_outcome || decision.outcome || decision.status || 'unknown'))}</strong><p class="research-muted">${escapeHtml(swingText(reason))}</p><p class="research-muted">決策版本：${escapeHtml(evidence.verification?.decision_version || raw.decision_version || '未知')}；查證${evidence.verification?.accepted === true ? '通過' : '未通過／尚未完成'}。${escapeHtml(errors.map(swingReason).join('；'))}</p>${!sources.length ? '<p class="research-muted">沒有可展示的已查證原文。模型自報網址及信心度不等於已查證。</p>' : ''}${Array.isArray(sources) ? sources.map(source => {
+          const url = safeHttps(source.url);
+          return `<div>${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title || source.source || '查看來源')}</a>` : '<span>來源網址未通過 HTTPS 檢查</span>'}<blockquote>${escapeHtml(source.excerpt || source.original_text || '未取得可稽核原文／摘錄；不能僅依網址認定合格。')}</blockquote><p class="research-muted">公布：${escapeHtml(source.published_at || '未知')} ／ 取得：${escapeHtml(source.obtained_at || '未知')} ／ 查證：${escapeHtml(source.verified_at || '未知')} ／ 截止：${escapeHtml(decision.cutoff_at || evidence.cutoff_at || (swing.comparison?.coverage || []).find(batch => batch.batch_id === decision.batch_id)?.cutoff_at || '未知')}</p></div>`;
+        }).join('') : ''}<details><summary>決策完整紀錄</summary><pre class="research-json">${escapeHtml(swingJSON(decision))}</pre></details></article>`;
+      }).join('');
+    }
+    async function swingLoadSelected() {
+      const id = swingEl('experiment').value;
+      const previousId = swingExperimentId(swing.current);
+      swing.preflight = null; swing.preflightKey = null;
+      swingUpdateRunAvailability();
+      swingEl('resume-confirmed').checked = false;
+      if (String(previousId) !== id) { swing.current = null; swingEl('current').classList.add('research-hidden'); }
+      if (!id) { swing.current = null; swingEl('current').classList.add('research-hidden'); return; }
+      const experiment = await api(`/api/swing/experiments/${encodeURIComponent(id)}`);
+      if (swingEl('experiment').value !== id) return;
+      swing.current = experiment;
+      const config = swingExperimentConfig(experiment);
+      swingEl('current').classList.remove('research-hidden');
+      swingEl('current-meta').textContent = `${swingMode(experiment.mode || config.mode)}。設定雜湊：${experiment.config_hash || '未提供'}。確認人：${experiment.confirmed_by || '詳見封存紀錄'}。${experiment.confirmation_note || ''}`;
+      swingEl('resume-confirmed').checked = false;
+      if (String(previousId) !== id) { swingEl('cutoff').value = ''; swingEl('run-key').value = ''; }
+      const cutoff = swingEl('cutoff').value ? swingCutoff() : null;
+      const cutoffKey = swingPreflightKey();
+      swingEl('coverage').textContent = cutoff ? '正在依指定截止時間檢查資料覆蓋…' : '請填寫研究截止時間，再按「依截止時間檢查覆蓋」。尚未通過資料檢查，研究新增功能暫不開放。';
+      swingRenderComparison({message:'正在載入已封存的比較結果。'});
+      const results = await Promise.allSettled([
+        cutoff ? api(`/api/swing/experiments/${encodeURIComponent(id)}/preflight?cutoff_at=${encodeURIComponent(cutoff)}`) : Promise.resolve(null),
+        api(`/api/swing/experiments/${encodeURIComponent(id)}/comparison`)
+      ]);
+      if (swingEl('experiment').value !== id) return;
+      const errors = [];
+      if (results[0].status === 'fulfilled' && results[0].value && cutoffKey === swingPreflightKey()) swingRenderPreflight(results[0].value);
+      else if (results[0].status === 'fulfilled') swingUpdateRunAvailability();
+      else { swingEl('coverage').textContent = `覆蓋檢查未完成：${results[0].reason.message}`; swingEl('run').disabled = true; errors.push(results[0].reason.message); }
+      if (results[1].status === 'fulfilled') swingRenderComparison(results[1].value);
+      else { swingRenderComparison({message:`比較結果尚無法載入：${results[1].reason.message}`}); errors.push(results[1].reason.message); }
+      swingNotice(errors.length ? `研究紀錄已載入，但仍有未完成項目：${errors.join('；')}` : '已載入封存設定與目前觀察結果。執行前請確認截止時間及資料覆蓋。');
+    }
+    async function swingLoadExperiments(preferredId) {
+      const payload = await api('/api/swing/experiments');
+      const rows = Array.isArray(payload) ? payload : payload.experiments || payload.items || [];
+      swing.experiments = rows;
+      const previous = String(preferredId ?? swingEl('experiment').value);
+      swingEl('experiment').innerHTML = '<option value="">請選擇已確認的實驗</option>' + rows.map(row => {
+        const config = swingExperimentConfig(row);
+        return `<option value="${escapeHtml(swingExperimentId(row))}">${escapeHtml(row.experiment_key || config.experiment_key || swingExperimentId(row))} · ${row.mode === 'historical_exploratory' || config.mode === 'historical_exploratory' ? '歷史探索' : '前瞻觀察'}</option>`;
+      }).join('');
+      if (rows.some(row => String(swingExperimentId(row)) === previous)) swingEl('experiment').value = previous;
+      if (swingEl('experiment').value) await swingLoadSelected();
+      else { swingEl('current').classList.add('research-hidden'); swingNotice(rows.length ? '請選擇實驗。修改任何設定時，請先建立新的確認版本。' : '尚無人工確認的實驗。請展開上方設定；未選 ETF、費率、風險及策略參數前不會開始比較。'); }
+    }
+    async function swingAction(button, action) {
+      if (swing.loading) return;
+      swing.loading = true;
+      const controls = [...document.querySelectorAll('#swing-research button, #swing-experiment')];
+      const originalText = button.textContent;
+      controls.forEach(control => { control.disabled = true; });
+      button.textContent = '處理中…';
+      try { await action(); }
+      catch (error) { swingNotice(`操作未完成：${error.message}`); }
+      finally { swing.loading = false; controls.forEach(control => { control.disabled = false; }); button.textContent = originalText; swingUpdateRunAvailability(); }
+    }
+    document.getElementById('swing-config-form').addEventListener('input', swingInvalidatePreview);
+    document.getElementById('swing-config-form').addEventListener('change', () => { swingInvalidatePreview(); swingConfigureStrategyFields(); });
+    swingConfigureStrategyFields();
+    swingEl('cutoff').addEventListener('input', () => {
+      swing.preflight = null; swing.preflightKey = null;
+      swingUpdateRunAvailability();
+      swingEl('coverage').textContent = '截止時間已變更，請重新檢查覆蓋後執行研究。';
+    });
+    document.getElementById('swing-config-form').addEventListener('submit', event => {
+      event.preventDefault();
+      swingAction(swingEl('preview'), async () => {
+        swingInvalidatePreview();
+        const revision = swing.configRevision;
+        const config = swingReadConfig(); if (!config) return;
+        const preview = await api('/api/swing/experiments/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config})});
+        if (revision !== swing.configRevision) throw new Error('設定在檢查期間已變更，請以目前內容重新檢查。');
+        if (preview.missing_fields?.length) throw new Error(`設定缺少：${preview.missing_fields.join('、')}`);
+        if (!preview.config_hash || !preview.config) throw new Error('伺服器未提供可確認的設定與雜湊，請檢查服務版本。');
+        swing.preview = preview;
+        swingEl('preview-hash').textContent = `本次設定雜湊：${preview.config_hash}`;
+        swingEl('preview-config').textContent = swingJSON(preview.config);
+        swingEl('approval').classList.remove('research-hidden');
+        swingNotice('設定檢查完成，尚未建立實驗。請核對完整設定與雜湊，填寫確認人及說明後再確認。');
+      });
+    });
+    swingEl('create').addEventListener('click', event => swingAction(event.currentTarget, async () => {
+      if (!swing.preview || !swingEl('config-confirmed').checked) throw new Error('請先產生設定版本，並勾選人工確認。');
+      const confirmed_by = swingEl('confirmed-by').value.trim();
+      const confirmation_note = swingEl('confirmation-note').value.trim();
+      if (!confirmed_by || !confirmation_note) throw new Error('確認人與確認說明均須填寫。');
+      const result = await api('/api/swing/experiments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config:swing.preview.config,expected_config_hash:swing.preview.config_hash,confirmed_by,confirmation_note})});
+      swingInvalidatePreview();
+      await swingLoadExperiments(result.experiment_id);
+      swingNotice(`已建立三組獨立紙上帳戶。設定雜湊：${result.config_hash}。尚未因此產生任何績效或成交。`);
+    }));
+    swingEl('experiment').addEventListener('change', () => swingAction(swingEl('reload'), swingLoadSelected));
+    swingEl('reload').addEventListener('click', event => swingAction(event.currentTarget, () => swingLoadExperiments()));
+    swingEl('preflight').addEventListener('click', event => swingAction(event.currentTarget, async () => {
+      if (!swing.current?.config_hash) throw new Error('請先選擇已人工確認的實驗。');
+      const id = swingExperimentId(swing.current);
+      const cutoff = swingCutoff(); const key = swingPreflightKey();
+      swing.preflight = null; swing.preflightKey = null; swingUpdateRunAvailability();
+      swingEl('coverage').textContent = '正在依指定截止時間重新檢查；本次完成前暫不開放研究執行。';
+      let result;
+      try { result = await api(`/api/swing/experiments/${encodeURIComponent(id)}/preflight?cutoff_at=${encodeURIComponent(cutoff)}`); }
+      catch (error) { swingEl('coverage').textContent = `覆蓋檢查未完成：${error.message}。目前不得啟動研究，請修正後重新檢查。`; throw error; }
+      if (key !== swingPreflightKey()) throw new Error('檢查期間截止時間已改變，請重新檢查。');
+      swingRenderPreflight(result);
+      swingNotice('覆蓋檢查已重新整理；請檢視缺項與新鮮度。');
+    }));
+    swingEl('run').addEventListener('click', event => swingAction(event.currentTarget, async () => {
+      if (!swing.current?.config_hash) throw new Error('尚未取得已確認的實驗雜湊。');
+      const run_key = swingEl('run-key').value.trim();
+      if (!run_key) throw new Error('請填寫本次執行識別鍵。');
+      const cutoff_at = swingCutoff();
+      if (swing.preflight?.qualified !== true || swing.preflightKey !== swingPreflightKey()) throw new Error('請先依目前截止時間完成資料覆蓋檢查。');
+      const id = swingExperimentId(swing.current);
+      swingNotice('正在依已確認設定研究；原文查證可能需要時間，請勿以新識別鍵重複送出。');
+      const result = await api(`/api/swing/experiments/${encodeURIComponent(id)}/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config_hash:swing.current.config_hash,run_key,cutoff_at})});
+      await swingLoadSelected();
+      swingEl('audit').textContent = swingJSON({experiment:swing.current,preflight:swing.preflight,comparison:swing.comparison,last_run:result});
+      swingNotice(`本次執行已回覆：${swingLabel(result.status || result.coverage_status || '請查看明細')}。${result.message || '請查看資料覆蓋、AI 決策及拒絕原因；不完整結果不作為 AI 效果證據。'}`);
+    }));
+    swingEl('observe').addEventListener('click', event => swingAction(event.currentTarget, async () => {
+      if (!swing.current?.config_hash) throw new Error('請先選擇已人工確認的實驗。');
+      const run_key = swingEl('run-key').value.trim();
+      if (!run_key) throw new Error('請填寫這次帳本更新識別鍵；重試時沿用同鍵。');
+      const id = swingExperimentId(swing.current);
+      swingNotice('正在依伺服器目前時間更新紙上帳本；真實資料不足時會記錄缺項。');
+      const result = await api(`/api/swing/experiments/${encodeURIComponent(id)}/observe`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config_hash:swing.current.config_hash,run_key})});
+      await swingLoadSelected();
+      swingEl('audit').textContent = swingJSON({experiment:swing.current,preflight:swing.preflight,comparison:swing.comparison,last_observation:result});
+      const missing = result.missing_fields || [];
+      swingNotice(`帳本更新：${swingLabel(result.status || 'unknown')}。${missing.length ? '缺項：' + missing.map(swingReason).join('；') + '。未補造行情或成交。' : '請查看三組帳務、決策與完整紀錄，沒有成交時不推定策略有效。'}`);
+    }));
+    swingEl('resume').addEventListener('click', event => swingAction(event.currentTarget, async () => {
+      const arm = swingEl('resume-arm').value;
+      const actor = swingEl('resume-actor').value.trim();
+      const note = swingEl('resume-note').value.trim();
+      if (!arm || !actor || !note || !swingEl('resume-confirmed').checked) throw new Error('請選擇組別，填寫確認人與理由，並勾選恢復確認。');
+      if (!swing.current?.config_hash) throw new Error('尚未取得已確認的實驗設定。');
+      const id = swingExperimentId(swing.current);
+      const event_key = `manual-resume:${arm}:${crypto.randomUUID()}`;
+      await api(`/api/swing/experiments/${encodeURIComponent(id)}/resume`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({arm,actor,note,event_key,config_hash:swing.current.config_hash})});
+      await swingLoadSelected();
+      swingNotice(`${arm} 組人工恢復確認已記錄。新增部位仍須通過資料、AI 及風險條件，不回填錯過的決策。`);
+    }));
+    swingLoadExperiments().catch(error => { swingEl('experiment').innerHTML = '<option value="">研究服務尚不可用</option>'; swingNotice(`研究服務尚未就緒：${error.message}。請確認資料庫遷移及服務版本；目前沒有產生比較或成交。`); });
 
     load();
   </script>

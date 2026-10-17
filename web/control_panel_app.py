@@ -4,7 +4,7 @@ import os
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 from typing import Any, Dict, List
@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.broker.shioaji_account_service import ShioajiAccountService
 from app.execution import OrderIntent
@@ -207,6 +207,57 @@ class AIAssistantRequest(BaseModel):
 
 class ShortlistRefreshRequest(BaseModel):
     force_ai: bool = True
+
+
+class SwingPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    config: dict[str, Any]
+
+
+class SwingCreateRequest(SwingPreviewRequest):
+    confirmed_by: str = Field(default="", max_length=200)
+    confirmation_note: str = Field(default="", max_length=2000)
+    expected_config_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+
+class SwingRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    config_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_key: str = Field(min_length=1, max_length=160)
+    cutoff_at: str
+
+
+class SwingObserveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    config_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_key: str = Field(min_length=1, max_length=160)
+
+
+class SwingResumeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    config_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    arm: str = Field(pattern=r"^[BC]$")
+    actor: str = Field(min_length=1, max_length=200)
+    note: str = Field(min_length=1, max_length=2000)
+    event_key: str = Field(min_length=1, max_length=160)
+
+
+class SwingRepairPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    repair_key: str = Field(min_length=1, max_length=160)
+    old_version_id: int = Field(gt=0)
+    action: str = Field(pattern=r"^(repair|quarantine|release)$")
+    actor: str = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=1, max_length=2000)
+    replacement: dict[str, Any] | None = None
+
+
+class SwingRepairApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    preview_id: int = Field(gt=0)
+    repair_key: str = Field(min_length=1, max_length=160)
+    actor: str = Field(min_length=1, max_length=200)
+    expected_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class AccountBalanceRequest(BaseModel):
@@ -2504,6 +2555,130 @@ def latest_candidates(count: int = 10) -> JSONResponse:
     except Exception as exc:  # noqa: BLE001
         _append_log_line("latest-candidates", _safe_error_text(exc))
         return _safe_error_response()
+
+
+def _swing_response(callback, *, write: bool = False) -> JSONResponse:
+    """研究入口不呼叫 init_db；部署與 request 的交易界線分開。"""
+    from decimal import Decimal
+    from fastapi.encoders import jsonable_encoder
+    from sqlalchemy.exc import NoResultFound, OperationalError
+    from app.db.session import get_session_factory
+    from app.pipeline.swing_research import MissingConfiguration, SwingResearchService
+    from app.security.reporting import sanitize_report_payload
+
+    try:
+        with get_session_factory()() as session:
+            try:
+                data = callback(SwingResearchService(session))
+                if write:
+                    session.commit()
+            except Exception:
+                session.rollback()
+                raise
+        # e4 整數保留單位，Decimal 不經浮點轉換。
+        data = sanitize_report_payload(jsonable_encoder(data, custom_encoder={Decimal: str}))
+        return JSONResponse({"status": "ok", "data": data, "money_unit": "TWD_e4 (1 元 = 10000 e4)"})
+    except MissingConfiguration as exc:
+        return JSONResponse({"detail": {"missing_fields": exc.missing_fields}}, status_code=422)
+    except NoResultFound:
+        return _safe_error_response("swing_record_not_found", 404)
+    except OperationalError as exc:
+        if "no such table" in str(exc).lower():
+            return JSONResponse({"status": "error", "error": "swing_schema_not_migrated", "message": "研究資料表尚未部署，請先備份並執行 Alembic 遷移。"}, status_code=503)
+        _append_log_line("swing-research", type(exc).__name__)
+        return _safe_error_response("swing_database_unavailable", 503)
+    except ValueError as exc:
+        message = str(exc)
+        if "swing_schema_not_migrated" in message:
+            return JSONResponse({"status": "error", "error": "swing_schema_not_migrated", "message": "研究資料表尚未部署，請先備份並執行 Alembic 遷移。"}, status_code=503)
+        if "找不到研究實驗" in message:
+            return _safe_error_response("swing_experiment_not_found", 404)
+        if "conflict" in message or "hash_mismatch" in message:
+            return _safe_error_response("swing_configuration_or_replay_conflict", 409)
+        return _safe_error_response("invalid_swing_request", 422)
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("swing-research", type(exc).__name__)
+        return _safe_error_response("swing_research_failed")
+
+
+def _swing_check_hash(service, experiment_id: int, expected: str) -> dict:
+    experiment = service.get_experiment(experiment_id)
+    if experiment["config_hash"] != expected:
+        raise ValueError("config_hash_mismatch")
+    return experiment
+
+
+@app.post("/api/swing/experiments/preview")
+def swing_preview(payload: SwingPreviewRequest) -> JSONResponse:
+    return _swing_response(lambda service: service.preview_config(payload.config))
+
+
+@app.post("/api/swing/experiments")
+def swing_create(payload: SwingCreateRequest) -> JSONResponse:
+    def create(service):
+        if payload.expected_config_hash is not None:
+            if service.preview_config(payload.config)["config_hash"] != payload.expected_config_hash:
+                raise ValueError("config_hash_mismatch")
+        return service.create_experiment(payload.config, payload.confirmed_by, payload.confirmation_note)
+    return _swing_response(create, write=True)
+
+
+@app.get("/api/swing/experiments")
+def swing_list(limit: int = 50) -> JSONResponse:
+    return _swing_response(lambda service: service.list_experiments(limit=max(1, min(100, limit))))
+
+
+@app.get("/api/swing/experiments/{experiment_id}")
+def swing_detail(experiment_id: int) -> JSONResponse:
+    return _swing_response(lambda service: service.get_experiment(experiment_id))
+
+
+@app.get("/api/swing/experiments/{experiment_id}/preflight")
+def swing_preflight(experiment_id: int, cutoff_at: str | None = None) -> JSONResponse:
+    return _swing_response(lambda service: service.preflight(experiment_id, cutoff_at=cutoff_at))
+
+
+@app.get("/api/swing/experiments/{experiment_id}/comparison")
+def swing_comparison(experiment_id: int) -> JSONResponse:
+    return _swing_response(lambda service: service.compare(experiment_id))
+
+
+@app.post("/api/swing/experiments/{experiment_id}/run")
+def swing_run(experiment_id: int, payload: SwingRunRequest) -> JSONResponse:
+    def run(service):
+        from app.services.subscription_research import build_swing_research_dependencies
+
+        _swing_check_hash(service, experiment_id, payload.config_hash)
+        return service.run(experiment_id, payload.run_key, payload.cutoff_at,
+                           **build_swing_research_dependencies())
+    return _swing_response(run, write=True)
+
+
+@app.post("/api/swing/experiments/{experiment_id}/observe")
+def swing_observe(experiment_id: int, payload: SwingObserveRequest) -> JSONResponse:
+    def observe(service):
+        _swing_check_hash(service, experiment_id, payload.config_hash)
+        return service.observe(experiment_id, datetime.now(timezone.utc).isoformat(), payload.run_key)
+    return _swing_response(observe, write=True)
+
+
+@app.post("/api/swing/experiments/{experiment_id}/resume")
+def swing_resume(experiment_id: int, payload: SwingResumeRequest) -> JSONResponse:
+    def resume(service):
+        _swing_check_hash(service, experiment_id, payload.config_hash)
+        return service.resume(experiment_id, payload.arm, payload.actor, payload.note,
+                              datetime.now(timezone.utc).isoformat(), payload.event_key)
+    return _swing_response(resume, write=True)
+
+
+@app.post("/api/swing/repairs/preview")
+def swing_repair_preview(payload: SwingRepairPreviewRequest) -> JSONResponse:
+    return _swing_response(lambda service: service.repair_preview(**payload.model_dump()), write=True)
+
+
+@app.post("/api/swing/repairs/apply")
+def swing_repair_apply(payload: SwingRepairApplyRequest) -> JSONResponse:
+    return _swing_response(lambda service: service.repair_apply(**payload.model_dump()), write=True)
 
 
 @app.get("/api/shortlist/latest")
