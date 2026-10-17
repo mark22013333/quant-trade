@@ -1,0 +1,414 @@
+{
+  "schema_version": 2,
+  "slug": "tw-swing-ai-validation",
+  "name": "台股新手 AI 輔助波段研究與績效驗證",
+  "type": "feature",
+  "inferred": false,
+  "phase": "verify",
+  "next": {
+    "command": "/plan-review",
+    "reason": "驗收通過，程式碼審查尚未進行"
+  },
+  "steps": {
+    "start": {
+      "status": "done",
+      "at": "2026-10-16T21:50:54+08:00",
+      "commit": "f58fbcdcd969196c053edce18751d80c964eda98",
+      "reason": null
+    },
+    "spec": {
+      "status": "done",
+      "at": "2026-10-16T22:51:57+08:00",
+      "commit": null,
+      "reason": null
+    },
+    "db": {
+      "status": "done",
+      "at": "2026-10-16T23:05:10+08:00",
+      "commit": null,
+      "reason": null
+    },
+    "arch": {
+      "status": "done",
+      "at": "2026-10-16T23:36:23+08:00",
+      "commit": null,
+      "reason": null
+    },
+    "build": {
+      "status": "done",
+      "at": "2026-10-18T00:20:46+08:00",
+      "commit": null,
+      "reason": null
+    },
+    "security": {
+      "status": "done",
+      "at": "2026-10-17T11:18:36+08:00",
+      "commit": null,
+      "reason": null
+    },
+    "verify": {
+      "status": "done",
+      "at": "2026-10-18T00:22:46+08:00",
+      "commit": null,
+      "reason": null
+    },
+    "review": {
+      "status": "pending",
+      "at": null,
+      "commit": null,
+      "reason": null
+    },
+    "close": {
+      "status": "pending",
+      "at": null,
+      "commit": null,
+      "reason": null
+    }
+  },
+  "work_unit": {
+    "skill": null,
+    "done": 0,
+    "total": 0,
+    "label": "",
+    "remaining": [],
+    "evidence": [],
+    "ambiguities": []
+  },
+  "autonomy": null,
+  "testing": {
+    "policy": "bdd",
+    "scenario_depth": "risky",
+    "runner": "pytest-junit",
+    "by": "human",
+    "at": "2026-10-16T23:41:23+08:00"
+  },
+  "gates": {
+    "requirement": {
+      "status": "approved",
+      "at": "2026-10-16T22:51:58+08:00",
+      "by": "human",
+      "reason": "使用者明確回覆「確認規格」，核准本次 15 條驗收條件與 D-2 至 D-11 行為提案；啟動前個人設定及實盤授權不在本次核准範圍。"
+    },
+    "architecture": {
+      "status": "approved",
+      "at": "2026-10-16T23:36:23+08:00",
+      "by": "human",
+      "reason": "使用者明確回覆「確認架構」，核准目前 plan.md 的 D-18 至 D-26 架構決策；本次不包含實盤下單或部署執行授權。"
+    },
+    "uat": {
+      "status": "pending",
+      "at": null,
+      "by": null,
+      "reason": null
+    }
+  },
+  "resume_hint": {
+    "branch": "mark/tw-swing-ai-validation",
+    "services": [],
+    "read_first": []
+  },
+  "results": {
+    "verify": {
+      "health_score": 100,
+      "passed": 15,
+      "failed": 0,
+      "warning": 0,
+      "blocked": 0,
+      "skipped": 0,
+      "manual": 0,
+      "mode": "full",
+      "backend_passed": 139,
+      "bdd_scenarios_passed": 16,
+      "network_changes": "none",
+      "failed_acs": "",
+      "findings": "F1與F2已修復；手機溢位及原security未解項保留",
+      "status": "PASS",
+      "bdd_records_passed": 17,
+      "new_regression_passed": 16,
+      "fixed_findings": "F1;F2",
+      "browser_exit_code": 0
+    },
+    "review": {},
+    "security": {
+      "critical": 1,
+      "warning": 2,
+      "files": 156,
+      "mode": "fix",
+      "fixes_applied": 3,
+      "network_changes": "none",
+      "status": "FAIL",
+      "regression_passed": 308,
+      "bdd_passed": 16,
+      "remaining": "IP位址權限誤判；跨站寫入；完整檔案讀取隔離"
+    }
+  },
+  "git": {
+    "branch": "mark/tw-swing-ai-validation",
+    "base": "mark/phase1-ops-acceptance",
+    "last_commit": "841f7013e29781e8f290a807d34c1352e418df05"
+  },
+  "notion": {
+    "page_id": "3fba401b-e0f5-8139-b3f5-d374bf97ca4f",
+    "mirrored_status": "進行中",
+    "last_synced_at": "2026-10-16T22:26:30+08:00"
+  },
+  "deploy": {
+    "steps_total": 3,
+    "steps_confirmed": 0
+  },
+  "parked": null,
+  "history": [
+    {
+      "at": "2026-10-17T11:15:47+08:00",
+      "event": "unit",
+      "detail": "plan-security 1/3"
+    },
+    {
+      "at": "2026-10-17T11:18:36+08:00",
+      "event": "unit",
+      "detail": "plan-security 3/3"
+    },
+    {
+      "at": "2026-10-17T11:18:36+08:00",
+      "event": "result",
+      "detail": "security: {\"critical\": 1, \"warning\": 2, \"files\": 156, \"mode\": \"fix\", \"fixes_applied\": 3, \"network_changes\": \"none\", \"regression_passed\": 308, \"bdd_passed\": 16, \"remaining\": \"IP位址權限誤判；跨站寫入；完整檔案讀取隔離\", \"status\": \"FAIL\"}"
+    },
+    {
+      "at": "2026-10-17T11:18:36+08:00",
+      "event": "unit",
+      "detail": "清空工作單元"
+    },
+    {
+      "at": "2026-10-17T11:18:36+08:00",
+      "event": "set",
+      "detail": "steps.security=done；phase=security"
+    },
+    {
+      "at": "2026-10-17T15:46:39+08:00",
+      "event": "set",
+      "detail": "steps.verify=in_progress；phase=verify"
+    },
+    {
+      "at": "2026-10-17T15:46:39+08:00",
+      "event": "unit",
+      "detail": "plan-verify 0/15"
+    },
+    {
+      "at": "2026-10-17T15:53:40+08:00",
+      "event": "unit",
+      "detail": "plan-verify 2/15"
+    },
+    {
+      "at": "2026-10-17T15:57:56+08:00",
+      "event": "unit",
+      "detail": "plan-verify 3/15"
+    },
+    {
+      "at": "2026-10-17T15:57:56+08:00",
+      "event": "unit",
+      "detail": "plan-verify 4/15"
+    },
+    {
+      "at": "2026-10-17T15:57:56+08:00",
+      "event": "unit",
+      "detail": "plan-verify 5/15"
+    },
+    {
+      "at": "2026-10-17T15:57:56+08:00",
+      "event": "unit",
+      "detail": "plan-verify 6/15"
+    },
+    {
+      "at": "2026-10-17T15:57:56+08:00",
+      "event": "unit",
+      "detail": "plan-verify 7/15"
+    },
+    {
+      "at": "2026-10-17T15:57:56+08:00",
+      "event": "unit",
+      "detail": "plan-verify 8/15"
+    },
+    {
+      "at": "2026-10-17T15:57:56+08:00",
+      "event": "unit",
+      "detail": "plan-verify 9/15"
+    },
+    {
+      "at": "2026-10-17T15:57:56+08:00",
+      "event": "unit",
+      "detail": "plan-verify 10/15"
+    },
+    {
+      "at": "2026-10-17T15:57:56+08:00",
+      "event": "unit",
+      "detail": "plan-verify 11/15"
+    },
+    {
+      "at": "2026-10-17T15:57:56+08:00",
+      "event": "unit",
+      "detail": "plan-verify 12/15"
+    },
+    {
+      "at": "2026-10-17T15:57:56+08:00",
+      "event": "unit",
+      "detail": "plan-verify 13/15"
+    },
+    {
+      "at": "2026-10-17T15:57:57+08:00",
+      "event": "unit",
+      "detail": "plan-verify 14/15"
+    },
+    {
+      "at": "2026-10-17T15:57:57+08:00",
+      "event": "unit",
+      "detail": "plan-verify 15/15"
+    },
+    {
+      "at": "2026-10-17T15:58:11+08:00",
+      "event": "result",
+      "detail": "verify: {\"health_score\": 80, \"passed\": 12, \"failed\": 3, \"warning\": 0, \"blocked\": 0, \"skipped\": 0, \"manual\": 0, \"mode\": \"full\", \"backend_passed\": 121, \"bdd_scenarios_passed\": 16, \"network_changes\": \"none\", \"failed_acs\": \"AC-6;AC-7;AC-14\", \"findings\": \"字串行情未正規化造成500；歷史決策時間使B/C漏成交\", \"status\": \"FAIL\"}"
+    },
+    {
+      "at": "2026-10-17T15:58:12+08:00",
+      "event": "unit",
+      "detail": "清空工作單元"
+    },
+    {
+      "at": "2026-10-17T15:58:12+08:00",
+      "event": "set",
+      "detail": "steps.verify=done；phase=verify"
+    },
+    {
+      "at": "2026-10-18T00:12:07+08:00",
+      "event": "set",
+      "detail": "steps.build=in_progress；phase=build"
+    },
+    {
+      "at": "2026-10-18T00:12:07+08:00",
+      "event": "unit",
+      "detail": "plan-build 0/3"
+    },
+    {
+      "at": "2026-10-18T00:16:48+08:00",
+      "event": "unit",
+      "detail": "plan-build 1/3"
+    },
+    {
+      "at": "2026-10-18T00:20:45+08:00",
+      "event": "unit",
+      "detail": "plan-build 3/3"
+    },
+    {
+      "at": "2026-10-18T00:20:45+08:00",
+      "event": "unit",
+      "detail": "清空工作單元"
+    },
+    {
+      "at": "2026-10-18T00:20:46+08:00",
+      "event": "set",
+      "detail": "steps.build=done；phase=build"
+    },
+    {
+      "at": "2026-10-18T00:20:46+08:00",
+      "event": "set",
+      "detail": "steps.verify=in_progress；phase=verify"
+    },
+    {
+      "at": "2026-10-18T00:22:23+08:00",
+      "event": "unit",
+      "detail": "plan-verify 1/15"
+    },
+    {
+      "at": "2026-10-18T00:22:23+08:00",
+      "event": "unit",
+      "detail": "plan-verify 2/15"
+    },
+    {
+      "at": "2026-10-18T00:22:23+08:00",
+      "event": "unit",
+      "detail": "plan-verify 3/15"
+    },
+    {
+      "at": "2026-10-18T00:22:23+08:00",
+      "event": "unit",
+      "detail": "plan-verify 4/15"
+    },
+    {
+      "at": "2026-10-18T00:22:23+08:00",
+      "event": "unit",
+      "detail": "plan-verify 5/15"
+    },
+    {
+      "at": "2026-10-18T00:22:23+08:00",
+      "event": "unit",
+      "detail": "plan-verify 6/15"
+    },
+    {
+      "at": "2026-10-18T00:22:23+08:00",
+      "event": "unit",
+      "detail": "plan-verify 7/15"
+    },
+    {
+      "at": "2026-10-18T00:22:23+08:00",
+      "event": "unit",
+      "detail": "plan-verify 8/15"
+    },
+    {
+      "at": "2026-10-18T00:22:23+08:00",
+      "event": "unit",
+      "detail": "plan-verify 9/15"
+    },
+    {
+      "at": "2026-10-18T00:22:24+08:00",
+      "event": "unit",
+      "detail": "plan-verify 10/15"
+    },
+    {
+      "at": "2026-10-18T00:22:24+08:00",
+      "event": "unit",
+      "detail": "plan-verify 11/15"
+    },
+    {
+      "at": "2026-10-18T00:22:24+08:00",
+      "event": "unit",
+      "detail": "plan-verify 12/15"
+    },
+    {
+      "at": "2026-10-18T00:22:24+08:00",
+      "event": "unit",
+      "detail": "plan-verify 13/15"
+    },
+    {
+      "at": "2026-10-18T00:22:24+08:00",
+      "event": "unit",
+      "detail": "plan-verify 14/15"
+    },
+    {
+      "at": "2026-10-18T00:22:24+08:00",
+      "event": "unit",
+      "detail": "plan-verify 15/15"
+    },
+    {
+      "at": "2026-10-18T00:22:46+08:00",
+      "event": "result",
+      "detail": "verify: {\"health_score\": 100, \"passed\": 15, \"failed\": 0, \"warning\": 0, \"blocked\": 0, \"skipped\": 0, \"manual\": 0, \"mode\": \"full\", \"backend_passed\": 139, \"bdd_scenarios_passed\": 16, \"bdd_records_passed\": 17, \"new_regression_passed\": 16, \"network_changes\": \"none\", \"failed_acs\": \"\", \"findings\": \"F1與F2已修復；手機溢位及原security未解項保留\", \"fixed_findings\": \"F1;F2\", \"browser_exit_code\": 0, \"status\": \"PASS\"}"
+    },
+    {
+      "at": "2026-10-18T00:22:46+08:00",
+      "event": "unit",
+      "detail": "清空工作單元"
+    },
+    {
+      "at": "2026-10-18T00:22:46+08:00",
+      "event": "set",
+      "detail": "steps.verify=done；phase=verify"
+    },
+    {
+      "at": "2026-10-18T00:41:04+08:00",
+      "event": "set",
+      "detail": "git.last_commit"
+    }
+  ],
+  "created": "2026-10-16T21:50:54+08:00",
+  "updated": "2026-10-18T00:41:04+08:00"
+}
