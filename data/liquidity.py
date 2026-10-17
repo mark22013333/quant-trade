@@ -19,7 +19,7 @@ except Exception:  # pragma: no cover
     certifi = None
 
 
-TWSE_DAILY_ALL_URL = "https://www.twse.com.tw/exchangeReport/STOCK_DAY_ALL?response=json"
+TWSE_DAILY_ALL_URL = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
 DEFAULT_CACHE_DIR = Path(__file__).parent / "cache"
 
 
@@ -37,18 +37,40 @@ def _build_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
-def _fetch_twse_daily_all() -> dict:
+def _fetch_twse_daily_all() -> list[dict[str, object]]:
+    request = urllib.request.Request(
+        TWSE_DAILY_ALL_URL,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "quant-trade/1.0",
+        },
+    )
     try:
-        with urllib.request.urlopen(TWSE_DAILY_ALL_URL, timeout=30, context=_build_ssl_context()) as resp:
-            raw = resp.read().decode("utf-8")
+        with urllib.request.urlopen(request, timeout=30, context=_build_ssl_context()) as resp:
+            content_type = resp.headers.get_content_type()
+            raw = resp.read().decode("utf-8-sig")
     except Exception as e:
         allow_insecure = os.getenv("ALLOW_INSECURE_MARKET_DATA", "").strip().lower() in {"1", "true", "yes", "on"}
         if not allow_insecure:
             raise RuntimeError("SSL verify failed and ALLOW_INSECURE_MARKET_DATA is not enabled") from e
         print(f"[WARN] SSL verify failed, fallback to unverified context: {e}", file=sys.stderr)
-        with urllib.request.urlopen(TWSE_DAILY_ALL_URL, timeout=30, context=ssl._create_unverified_context()) as resp:
-            raw = resp.read().decode("utf-8")
-    return json.loads(raw)
+        with urllib.request.urlopen(request, timeout=30, context=ssl._create_unverified_context()) as resp:
+            content_type = resp.headers.get_content_type()
+            raw = resp.read().decode("utf-8-sig")
+
+    if content_type != "application/json":
+        raise RuntimeError(f"TWSE daily data returned unexpected content type: {content_type}")
+    if not raw.strip():
+        raise RuntimeError("TWSE daily data returned an empty response")
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise RuntimeError("TWSE daily data returned invalid JSON") from e
+
+    if not isinstance(payload, list) or not all(isinstance(row, dict) for row in payload):
+        raise RuntimeError("TWSE daily data returned an unexpected JSON structure")
+    return payload
 
 
 def _to_numeric(series: pd.Series) -> pd.Series:
@@ -58,28 +80,26 @@ def _to_numeric(series: pd.Series) -> pd.Series:
 def get_top_liquid_stocks(top_n: int = 300) -> LiquidityResult:
     DEFAULT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    payload = _fetch_twse_daily_all()
-    fields = payload.get("fields", [])
-    data = payload.get("data", [])
-    date_str = payload.get("date") or datetime.now().strftime("%Y%m%d")
+    records = _fetch_twse_daily_all()
+    if not records:
+        raise RuntimeError("TWSE daily data is empty or unavailable")
+
+    date_str = str(records[0].get("Date") or datetime.now().strftime("%Y%m%d"))
 
     cache_path = DEFAULT_CACHE_DIR / f"liquidity_{date_str}.csv"
     if cache_path.exists():
         df_cached = pd.read_csv(cache_path, dtype=str)
         return LiquidityResult(df=df_cached, source=str(cache_path), cached=True)
 
-    if not fields or not data:
-        raise RuntimeError("TWSE daily data is empty or unavailable")
+    df = pd.DataFrame.from_records(records)
+    required_columns = {"Code", "TradeValue", "TradeVolume"}
+    missing_columns = required_columns.difference(df.columns)
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise RuntimeError(f"TWSE daily data is missing required columns: {missing}")
 
-    df = pd.DataFrame(data, columns=fields)
-
-    # 欄位可能包含：證券代號、成交股數、成交金額
-    col_code = "證券代號" if "證券代號" in df.columns else df.columns[0]
-    col_amount = "成交金額" if "成交金額" in df.columns else None
-    col_volume = "成交股數" if "成交股數" in df.columns else None
-
-    df = df[[c for c in [col_code, col_amount, col_volume] if c in df.columns]].copy()
-    df = df.rename(columns={col_code: "code", col_amount: "turnover", col_volume: "volume"})
+    df = df[["Code", "TradeValue", "TradeVolume"]].copy()
+    df = df.rename(columns={"Code": "code", "TradeValue": "turnover", "TradeVolume": "volume"})
     if "turnover" in df.columns:
         df["turnover"] = _to_numeric(df["turnover"])
     if "volume" in df.columns:
