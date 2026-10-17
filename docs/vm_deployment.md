@@ -1,5 +1,8 @@
 # Quant-Trade VM 部署手冊
 
+正式委託前的分階段時程、1 萬元風控與效益衡量，另見
+[正式部署與新台幣 1 萬元小額實盤計畫](production_rollout_and_10k_pilot.md)。
+
 本手冊用於第一階段部署：保留現有 FastAPI 控制台，不建立 React 前端。Nginx 對外提供 HTTPS，FastAPI 只綁 `127.0.0.1:8766`。交易控制台入口由 Nginx IP 白名單與 Basic Auth 保護，API 與報表再由 `CONTROL_PANEL_TOKEN` 保護。
 
 目前 `cheng.tplinkdns.com` 已有既有站台，因此 Quant-Trade 掛在子路徑：

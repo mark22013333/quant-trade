@@ -681,6 +681,118 @@ def test_daily_radar_export_builds_actionable_review_queue_without_allocation_pl
     assert "盯盤: 2881 富邦金 | 未配置 | Entry>=74 | 突破 87.06 | 回測 84.48" not in brief_text
 
 
+def test_daily_radar_export_excludes_prior_run_symbols_from_current_handoff(tmp_path):
+    export = export_daily_radar_files(
+        [
+            {
+                "rank": 1,
+                "symbol": "1216",
+                "name": "統一",
+                "action_label": "WATCH_WAIT_TRIGGER",
+                "price": 70.0,
+                "entry_score": 70.2,
+                "risk_adjusted_score": 56.2,
+                "risk_score": 0.87,
+                "atr_heat": "normal",
+                "data_quality": "fresh",
+                "blocker_tags": [],
+            }
+        ],
+        output_dir=tmp_path,
+        report_date=date(2026, 7, 22),
+        run_id="radar_current_scope",
+        allocation_plan={
+            "status": "ok",
+            "allocation_diagnostics": {
+                "review_queue": {
+                    "lanes": {
+                        "preview": {"label": "可先建立 Preview", "count": 0, "items": []},
+                        "trigger": {
+                            "label": "設觸發觀察",
+                            "count": 3,
+                            "items": [
+                                {"symbol": symbol, "lane": "trigger", "name": "前次候選"}
+                                for symbol in ("3481", "2379", "3711")
+                            ],
+                        },
+                        "risk": {"label": "先處理風險", "count": 0, "items": []},
+                    },
+                    "summary": {"preview_count": 0, "trigger_count": 3, "risk_count": 0},
+                    "handoff": {
+                        "primary_lane": "trigger",
+                        "next_session_note": "設觸發觀察 3 檔：3481、2379、3711",
+                    },
+                }
+            },
+        },
+    )
+
+    payload = json.loads((tmp_path / export["files"]["json"]).read_text(encoding="utf-8"))
+    brief_text = (tmp_path / export["files"]["decision_brief_md"]).read_text(encoding="utf-8")
+    review_queue = payload["allocation_plan"]["allocation_diagnostics"]["review_queue"]
+
+    assert review_queue["source"] == "investment_actions_fallback"
+    assert review_queue["lanes"]["trigger"]["count"] == 1
+    assert review_queue["lanes"]["trigger"]["items"][0]["symbol"] == "1216"
+    assert payload["decision_brief"]["handoff"]["next_session_note"] == "設觸發觀察 1 檔：1216"
+    assert "1216" in brief_text
+    assert "3481" not in brief_text
+    assert "2379" not in brief_text
+    assert "3711" not in brief_text
+
+
+def test_daily_radar_export_excludes_stale_lane_when_current_action_changed(tmp_path):
+    export = export_daily_radar_files(
+        [
+            {
+                "rank": 1,
+                "symbol": "1216",
+                "name": "統一",
+                "action_label": "NOT_RECOMMENDED",
+                "price": 76.8,
+                "entry_score": 52.0,
+                "risk_adjusted_score": 25.5,
+                "risk_score": 0.5,
+                "atr_heat": "normal",
+                "data_quality": "fresh",
+                "blocker_tags": [],
+            }
+        ],
+        output_dir=tmp_path,
+        report_date=date(2026, 7, 24),
+        run_id="radar_current_action_changed",
+        allocation_plan={
+            "status": "ok",
+            "allocation_diagnostics": {
+                "review_queue": {
+                    "lanes": {
+                        "preview": {"label": "可先建立 Preview", "count": 0, "items": []},
+                        "trigger": {
+                            "label": "設觸發觀察",
+                            "count": 1,
+                            "items": [{"symbol": "1216", "lane": "trigger", "name": "統一"}],
+                        },
+                        "risk": {"label": "先處理風險", "count": 0, "items": []},
+                    },
+                    "summary": {"preview_count": 0, "trigger_count": 1, "risk_count": 0},
+                    "handoff": {
+                        "primary_lane": "trigger",
+                        "next_session_note": "設觸發觀察 1 檔：1216",
+                    },
+                }
+            },
+        },
+    )
+
+    payload = json.loads((tmp_path / export["files"]["json"]).read_text(encoding="utf-8"))
+    review_queue = payload["allocation_plan"]["allocation_diagnostics"]["review_queue"]
+
+    assert review_queue["lanes"]["trigger"]["count"] == 0
+    assert review_queue["lanes"]["trigger"]["items"] == []
+    assert payload["decision_brief"]["handoff"]["primary_lane"] == ""
+    assert payload["decision_brief"]["handoff"]["next_session_note"] == "等待配置行動線"
+
+
 def test_daily_radar_export_rebuilds_redacted_trigger_plan(tmp_path):
     export = export_daily_radar_files(
         [

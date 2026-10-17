@@ -158,6 +158,8 @@ Phase 1 名稱：日常決策雷達驗收版。
 
 不得為了解除 `observation_days_insufficient` 而補寫未實際執行的日期。
 
+`observation_days_insufficient` 只阻擋升級到 paper，不阻擋開始 Phase 1 使用者測試；若 promotion readiness 同時包含對帳、環境或交易安全原因，仍須先處理完成，不能用人工 observation 略過。
+
 ## 通過條件
 
 Phase 1 可結束的標準如下：

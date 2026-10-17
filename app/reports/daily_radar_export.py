@@ -247,6 +247,120 @@ def _review_queue_has_items(plan: dict[str, Any]) -> bool:
     return False
 
 
+def _scope_review_queue_to_current_radar(plan: dict[str, Any], items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Keep the daily handoff aligned with symbols in the current radar run."""
+    current_items = {
+        str(item.get("symbol") or ""): item
+        for item in items
+        if isinstance(item, dict) and item.get("symbol")
+    }
+    if not current_items:
+        return plan
+
+    diagnostics = plan.get("allocation_diagnostics") if isinstance(plan.get("allocation_diagnostics"), dict) else {}
+    review_queue = diagnostics.get("review_queue") if isinstance(diagnostics.get("review_queue"), dict) else {}
+    lanes = review_queue.get("lanes") if isinstance(review_queue.get("lanes"), dict) else {}
+    if not lanes:
+        return plan
+
+    scoped_lanes: dict[str, Any] = {}
+    excluded_symbol_count = 0
+
+    def belongs_to_lane(lane_key: str, symbol: str) -> bool:
+        current = current_items.get(symbol)
+        if not isinstance(current, dict):
+            return False
+        blockers = current.get("blocker_tags") if isinstance(current.get("blocker_tags"), list) else []
+        action_label = str(current.get("action_label") or "")
+        if lane_key == "risk":
+            return bool(blockers)
+        if blockers:
+            return False
+        if lane_key == "preview":
+            return action_label == "ENTRY_READY"
+        if lane_key == "trigger":
+            return action_label == "WATCH_WAIT_TRIGGER"
+        return True
+
+    for lane_key, lane_value in lanes.items():
+        if not isinstance(lane_value, dict):
+            scoped_lanes[lane_key] = lane_value
+            continue
+        lane = dict(lane_value)
+        original_items = lane.get("items") if isinstance(lane.get("items"), list) else []
+        scoped_items = [
+            item
+            for item in original_items
+            if isinstance(item, dict)
+            and belongs_to_lane(str(lane_key), str(item.get("symbol") or ""))
+        ]
+        excluded_symbol_count += len(original_items) - len(scoped_items)
+        lane["items"] = scoped_items
+        lane["count"] = len(scoped_items)
+        alert_plan = lane.get("alert_plan")
+        if isinstance(alert_plan, dict) and isinstance(alert_plan.get("symbols"), list):
+            scoped_symbols = {
+                str(item.get("symbol") or "")
+                for item in scoped_items
+                if isinstance(item, dict) and item.get("symbol")
+            }
+            lane["alert_plan"] = {
+                **alert_plan,
+                "symbols": [str(symbol) for symbol in alert_plan["symbols"] if str(symbol) in scoped_symbols],
+            }
+        scoped_lanes[lane_key] = lane
+
+    if excluded_symbol_count == 0:
+        return plan
+
+    counts = {
+        lane_key: len(lane.get("items", []))
+        for lane_key, lane in scoped_lanes.items()
+        if isinstance(lane, dict)
+    }
+    primary_key = next((key for key in ("risk", "preview", "trigger") if counts.get(key, 0) > 0), "")
+    if primary_key:
+        primary_lane = scoped_lanes[primary_key]
+        primary_label = str(primary_lane.get("label") or primary_key)
+        top_symbols = [
+            str(item.get("symbol") or "")
+            for item in primary_lane.get("items", [])[:4]
+            if isinstance(item, dict) and item.get("symbol")
+        ]
+        primary_action = f"{primary_label} {counts[primary_key]} 檔"
+        next_session_note = f"{primary_action}：{'、'.join(top_symbols)}" if top_symbols else primary_action
+    else:
+        primary_label = ""
+        top_symbols = []
+        primary_action = "等待配置行動線"
+        next_session_note = "等待配置行動線"
+
+    scoped_queue = dict(review_queue)
+    scoped_queue["lanes"] = scoped_lanes
+    scoped_queue["summary"] = {
+        "preview_count": counts.get("preview", 0),
+        "trigger_count": counts.get("trigger", 0),
+        "risk_count": counts.get("risk", 0),
+    }
+    scoped_queue["handoff"] = {
+        "primary_lane": primary_key,
+        "primary_label": primary_label,
+        "primary_action": primary_action,
+        "next_session_note": next_session_note,
+        "top_symbols": top_symbols,
+        "total_review_count": sum(counts.values()),
+        "source": "current_radar_scope",
+    }
+    scoped_queue["scope"] = "current_radar"
+    scoped_queue["excluded_symbol_count"] = excluded_symbol_count
+
+    output = dict(plan)
+    scoped_diagnostics = dict(diagnostics)
+    scoped_diagnostics["review_queue"] = scoped_queue
+    output["allocation_diagnostics"] = scoped_diagnostics
+    return output
+
+
 def _fallback_review_queue_from_actions(items: list[dict[str, Any]]) -> dict[str, Any]:
     lanes = {
         "preview": {
@@ -426,6 +540,7 @@ def export_daily_radar_files(
     safe_allocation_outcomes = sanitize_report_payload(allocation_outcomes) if isinstance(allocation_outcomes, dict) else {}
     safe_allocation_calibration = sanitize_report_payload(allocation_calibration) if isinstance(allocation_calibration, dict) else {}
     safe_trading_feedback = sanitize_report_payload(trading_feedback) if isinstance(trading_feedback, dict) else {}
+    safe_allocation_plan = _scope_review_queue_to_current_radar(safe_allocation_plan, safe_payload)
     safe_run_id = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in str(run_id or "latest"))
     json_name = f"daily_radar_{safe_run_id}.json"
     csv_name = f"daily_radar_{safe_run_id}.csv"

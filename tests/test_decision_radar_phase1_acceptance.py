@@ -128,6 +128,92 @@ def test_decision_radar_phase1_acceptance_blocks_missing_risk_quality() -> None:
     assert any("風險品質" in step for step in payload["next_steps"])
 
 
+def test_decision_radar_phase1_acceptance_defers_observation_shortage_until_promotion() -> None:
+    repo = _Repo(
+        rows=[
+            {
+                "rank": 1,
+                "symbol": "3481",
+                "action_label": "WATCH_WAIT_TRIGGER",
+                "risk_quality_label": "先降溫",
+                "risk_quality_score": 34.0,
+                "risk_adjusted_score": 51.9,
+                "blocker_tags": [],
+            }
+        ]
+    )
+    ops_payload = {
+        "status": "danger",
+        "blocking_reasons": ["promotion_readiness"],
+        "warnings": ["eod_summary"],
+        "metrics": {"live_orders_enabled": False},
+        "components": [
+            {
+                "key": "promotion_readiness",
+                "details": {"blocking_reasons": ["observation_days_insufficient"]},
+            }
+        ],
+    }
+
+    payload = DecisionRadarPhase1AcceptanceService(min_rows=1).build(
+        repo,
+        as_of=date(2026, 7, 21),
+        ops_payload=ops_payload,
+    )
+
+    assert payload["status"] == "warn"
+    assert payload["ready_for_user_testing"] is True
+    assert payload["blocking_reasons"] == []
+    assert payload["warnings"] == ["observation_period_pending"]
+    assert payload["evidence"]["ops_readiness"]["user_testing_blocking_reasons"] == []
+    assert payload["evidence"]["ops_readiness"]["deferred_until_promotion"] == [
+        "observation_days_insufficient"
+    ]
+
+
+def test_decision_radar_phase1_acceptance_keeps_other_promotion_blockers() -> None:
+    repo = _Repo(
+        rows=[
+            {
+                "rank": 1,
+                "symbol": "3481",
+                "action_label": "WATCH_WAIT_TRIGGER",
+                "risk_quality_label": "先降溫",
+                "risk_quality_score": 34.0,
+                "risk_adjusted_score": 51.9,
+                "blocker_tags": [],
+            }
+        ]
+    )
+    ops_payload = {
+        "status": "danger",
+        "blocking_reasons": ["promotion_readiness"],
+        "warnings": [],
+        "metrics": {"live_orders_enabled": False},
+        "components": [
+            {
+                "key": "promotion_readiness",
+                "details": {
+                    "blocking_reasons": [
+                        "observation_days_insufficient",
+                        "reconciliation_not_matched",
+                    ]
+                },
+            }
+        ],
+    }
+
+    payload = DecisionRadarPhase1AcceptanceService(min_rows=1).build(
+        repo,
+        as_of=date(2026, 7, 21),
+        ops_payload=ops_payload,
+    )
+
+    assert payload["status"] == "danger"
+    assert payload["ready_for_user_testing"] is False
+    assert payload["blocking_reasons"] == ["ops_not_danger"]
+
+
 def test_decision_radar_phase1_acceptance_cli_parser_exposes_command() -> None:
     args = build_parser().parse_args(
         [

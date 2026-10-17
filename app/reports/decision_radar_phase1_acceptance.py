@@ -8,6 +8,7 @@ from app.reports.ops_readiness import OpsReadinessService
 
 
 STATUS_RANK = {"ok": 0, "warn": 1, "danger": 2}
+DEFERRED_USER_TESTING_PROMOTION_BLOCKERS = {"observation_days_insufficient"}
 
 
 def _status_worst(*statuses: str) -> str:
@@ -98,6 +99,36 @@ def _check(
     }
 
 
+def _ops_user_testing_gate(ops: dict[str, Any]) -> dict[str, Any]:
+    blocking_reasons = [str(item) for item in (ops.get("blocking_reasons") or []) if str(item).strip()]
+    effective_blockers = list(blocking_reasons)
+    deferred_blockers: list[str] = []
+    components = ops.get("components") if isinstance(ops.get("components"), list) else []
+    promotion = next(
+        (item for item in components if isinstance(item, dict) and item.get("key") == "promotion_readiness"),
+        {},
+    )
+    details = promotion.get("details") if isinstance(promotion.get("details"), dict) else {}
+    promotion_blockers = {
+        str(item)
+        for item in (details.get("blocking_reasons") or [])
+        if str(item).strip()
+    }
+    if (
+        "promotion_readiness" in effective_blockers
+        and promotion_blockers
+        and promotion_blockers <= DEFERRED_USER_TESTING_PROMOTION_BLOCKERS
+    ):
+        effective_blockers.remove("promotion_readiness")
+        deferred_blockers = sorted(promotion_blockers)
+    if str(ops.get("status") or "").lower() == "danger" and not blocking_reasons:
+        effective_blockers.append("ops_status_danger")
+    return {
+        "blocking_reasons": effective_blockers,
+        "deferred_blockers": deferred_blockers,
+    }
+
+
 class DecisionRadarPhase1AcceptanceService:
     """Build the user-test gate for the daily decision radar phase."""
 
@@ -139,7 +170,14 @@ class DecisionRadarPhase1AcceptanceService:
         ).build(repo, as_of=target_day, target_phase="paper")
         rows = _call_latest_radar(repo, count=max(50, self.min_rows))
         action_grade = _action_grade_summary(rows)
-        checks = self._checks(rows=rows, radar_health=radar_health, ops=ops, action_grade=action_grade)
+        ops_user_testing_gate = _ops_user_testing_gate(ops)
+        checks = self._checks(
+            rows=rows,
+            radar_health=radar_health,
+            ops=ops,
+            action_grade=action_grade,
+            ops_user_testing_gate=ops_user_testing_gate,
+        )
         status = self._status_from_checks(checks)
         ready_for_user_testing = status != "danger"
         return {
@@ -186,6 +224,8 @@ class DecisionRadarPhase1AcceptanceService:
                     "status": ops.get("status"),
                     "blocking_reasons": ops.get("blocking_reasons") or [],
                     "warnings": ops.get("warnings") or [],
+                    "user_testing_blocking_reasons": ops_user_testing_gate["blocking_reasons"],
+                    "deferred_until_promotion": ops_user_testing_gate["deferred_blockers"],
                 },
             },
         }
@@ -197,6 +237,7 @@ class DecisionRadarPhase1AcceptanceService:
         radar_health: dict[str, Any],
         ops: dict[str, Any],
         action_grade: dict[str, Any],
+        ops_user_testing_gate: dict[str, Any],
     ) -> list[dict[str, Any]]:
         row_count = len(rows)
         counts = action_grade.get("counts") if isinstance(action_grade.get("counts"), dict) else {}
@@ -237,11 +278,23 @@ class DecisionRadarPhase1AcceptanceService:
             ),
             _check(
                 key="ops_not_danger",
-                label="營運總檢非 danger",
-                passed=str(ops.get("status")) != "danger",
+                label="營運總檢無使用者測試阻擋",
+                passed=not ops_user_testing_gate["blocking_reasons"],
                 severity="danger",
-                observed=ops.get("status"),
-                message="營運總檢不能有未處理 danger，否則先修環境或資料再測。",
+                observed={
+                    "status": ops.get("status"),
+                    "blocking_reasons": ops_user_testing_gate["blocking_reasons"],
+                    "deferred_until_promotion": ops_user_testing_gate["deferred_blockers"],
+                },
+                message="營運總檢不能有資料、環境、對帳或交易安全阻擋；只有觀察天數不足時可先開始人工測試。",
+            ),
+            _check(
+                key="observation_period_pending",
+                label="人工觀察期仍在累積",
+                passed=not ops_user_testing_gate["deferred_blockers"],
+                severity="warn",
+                observed=ops_user_testing_gate["deferred_blockers"],
+                message="觀察天數不足不阻擋開始使用者測試，但仍會阻擋升級到 paper。",
             ),
             _check(
                 key="live_orders_disabled",
