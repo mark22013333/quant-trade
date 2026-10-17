@@ -1209,6 +1209,74 @@ class TradingRepository:
         stmt = stmt.order_by(HoldingSharesPerDaily.date.desc()).limit(1)
         return self.session.execute(stmt).scalar_one_or_none()
 
+    def record_fundamental_sources(self, symbol: str, records: list[dict], *, kind: str) -> int:
+        """新研究來源僅追加；未知公告保留原文並與舊 NOT NULL 快取隔離。"""
+        from app.db.swing_repository import SwingRepository, now_us
+        repo = SwingRepository(self.session)
+        count = 0
+        for record in records:
+            public_at = record.get("public_at")
+            observed_at = now_us()
+            repo.append_source({
+                "source": str(record.get("source") or "finmind"), "kind": kind,
+                "source_key": f"{symbol}:{kind}:{record['period']}", "symbol": symbol,
+                "data_period": record["period"], "public_at": public_at,
+                "obtained_at": observed_at, "verified_at": observed_at if public_at else None,
+                "quality": "verified" if public_at else "unknown_publication",
+                "payload": {"schema_version": 1, **record},
+            })
+            count += 1
+        return count
+
+    def get_point_in_time_fundamentals(self, symbol: str, cutoff_at) -> dict:
+        """生產評分的唯一來源邊界；舊表僅為相容快取，絕不自動回退。"""
+        from types import SimpleNamespace
+        from sqlalchemy import inspect
+        from app.db.swing_repository import SwingRepository
+        result = {"revenue": None, "financial": None, "news": [], "status": "missing"}
+        if not inspect(self.session.connection()).has_table("swing_source_versions"):
+            return {**result, "status": "schema_unavailable"}
+        source_repo = SwingRepository(self.session)
+        for kind, key in (("monthly_revenue", "revenue"), ("financial_summary", "financial")):
+            rows = source_repo.eligible_sources(kind, symbol, cutoff_at)
+            if rows:
+                latest = rows[-1]
+                payload = dict(latest["payload"])
+                if kind == "monthly_revenue":
+                    # Parser-wide ratios can contain a subsequently revised or
+                    # unpublished denominator. Recompute from this cutoff's
+                    # eligible, same-source facts instead of trusting cached rates.
+                    import math
+                    year, month = (int(part) for part in latest["data_period"].split("-"))
+                    previous = f"{year-1:04d}-12" if month == 1 else f"{year:04d}-{month-1:02d}"
+                    for field, period in (("revenue_yoy_pct", f"{year-1:04d}-{month:02d}"), ("revenue_mom_pct", previous)):
+                        payload[field] = None
+                        bases = [row for row in rows if row["source"] == latest["source"] and row["data_period"] == period]
+                        if len(bases) == 1:
+                            try:
+                                numerator = float(payload["revenue"])
+                                denominator = float(bases[0]["payload"]["revenue"])
+                                if math.isfinite(numerator) and math.isfinite(denominator) and denominator > 0:
+                                    payload[field] = (numerator / denominator - 1) * 100
+                            except (KeyError, TypeError, ValueError):
+                                pass
+                    payload["period"] = latest["data_period"]
+                else:
+                    for field in ("eps", "roe_pct", "gross_margin_pct", "operating_margin_pct", "debt_ratio_pct", "operating_cash_flow"):
+                        payload.setdefault(field, None)
+                    payload["period"] = latest["data_period"]
+                public_at = datetime.fromisoformat(latest["public_at"])
+                from zoneinfo import ZoneInfo
+                result[key] = SimpleNamespace(**{**payload, "announce_date": public_at.astimezone(ZoneInfo("Asia/Taipei")).date(), "source_version_id": latest["id"]})
+        for row in source_repo.eligible_sources("news", symbol, cutoff_at)[-5:]:
+            payload = row["payload"]
+            result["news"].append(SimpleNamespace(news_date=datetime.fromisoformat(row["public_at"]).date(), title=payload.get("title", ""),
+                source_name=payload.get("source_name", row["source"]), llm_summary=payload.get("summary", ""),
+                risk_tags_json=json.dumps(payload.get("risk_tags", []), ensure_ascii=False)))
+        if result["revenue"] is not None or result["financial"] is not None or result["news"]:
+            result["status"] = "available"
+        return result
+
     def upsert_monthly_revenues(self, symbol: str, records: list[dict]) -> int:
         def _find_pending(period: str) -> MonthlyRevenue | None:
             for row in self.session.new:

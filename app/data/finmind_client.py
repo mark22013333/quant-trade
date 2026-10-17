@@ -445,41 +445,65 @@ class FinMindClient:
             )
         return rows
 
+    @staticmethod
+    def _explicit_public_at(row: dict) -> str | None:
+        """來源標籤與 create_time 不是公告；只有帶時區的明示公告時間可作 PIT。"""
+        value = FinMindClient._pick(row, "public_at", "published_at", "announcement_time", "publication_datetime", "announce_date", "publication_date")
+        if value is None:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                return None
+            return parsed.isoformat()
+        except (ValueError, TypeError):
+            return None
+
     def fetch_monthly_revenue(self, stock_id: str, start_date: str | date, end_date: str | date) -> list[dict]:
         payload_rows = self._request_dataset(
-            dataset="TaiwanStockMonthRevenue",
-            data_id=str(stock_id),
-            start_date=start_date,
-            end_date=end_date,
+            dataset="TaiwanStockMonthRevenue", data_id=str(stock_id),
+            start_date=start_date, end_date=end_date,
         )
-        rows: list[dict] = []
+        parsed: list[dict] = []
         for row in payload_rows:
-            row_date = self._to_date(self._pick(row, "date", "revenue_month", "month"))
-            period = self._normalize_period(
-                self._pick(row, "period", "revenue_month", "month", "date"),
-                fallback_date=row_date,
-                month_only=True,
-            )
-            announce_date = self._to_date(self._pick(row, "announce_date", "publication_date", "date")) or self._default_announce_date(
-                period,
-                fallback=row_date,
-            )
-            revenue = self._to_float(
-                self._pick(row, "revenue", "Revenue", "monthly_revenue", "當月營收", "current_month_revenue")
-            )
-            if not period or announce_date is None or revenue is None:
+            period = ""
+            try:
+                year = int(str(row.get("revenue_year", "")))
+                month = int(str(row.get("revenue_month", "")))
+                if 1900 <= year <= 2200 and 1 <= month <= 12:
+                    period = f"{year:04d}-{month:02d}"
+            except (TypeError, ValueError):
+                pass
+            if not period:
+                # Full explicit periods are supported, but never infer a revenue
+                # month from FinMind's next-month date label.
+                candidate = str(self._pick(row, "period", "revenue_month", "month") or "")
+                if re.fullmatch(r"\d{4}[-/]\d{1,2}", candidate):
+                    year, month = (int(v) for v in re.split(r"[-/]", candidate))
+                    if 1900 <= year <= 2200 and 1 <= month <= 12:
+                        period = f"{year:04d}-{month:02d}"
+            revenue = self._to_float(self._pick(row, "revenue", "Revenue", "monthly_revenue", "當月營收", "current_month_revenue"))
+            if not period or revenue is None:
                 continue
-            rows.append(
-                {
-                    "period": period,
-                    "announce_date": announce_date,
-                    "revenue": float(revenue),
-                    "revenue_yoy_pct": self._to_float(self._pick(row, "revenue_year", "yoy_growth_pct", "YoY", "yoy")),
-                    "revenue_mom_pct": self._to_float(self._pick(row, "mom_growth_pct", "MoM", "mom", "month_growth_pct")),
-                    "source": "finmind",
-                }
-            )
-        return rows
+            parsed.append({"period": period,
+                           "announce_date": self._to_date(self._pick(row, "announce_date", "publication_date", "public_at", "published_at")),
+                           "public_at": self._explicit_public_at(row), "revenue": float(revenue),
+                           "revenue_yoy_pct": None, "revenue_mom_pct": None,
+                           "source": "finmind", "parser_version": "monthly-revenue-v2",
+                           "raw_json": json.dumps(row, ensure_ascii=False, sort_keys=True, default=str)})
+        by_period: dict[str, list[dict]] = defaultdict(list)
+        for item in parsed:
+            by_period[item["period"]].append(item)
+        for item in parsed:
+            year, month = (int(part) for part in item["period"].split("-"))
+            previous = f"{year-1:04d}-12" if month == 1 else f"{year:04d}-{month-1:02d}"
+            for field, base_period in (("revenue_yoy_pct", f"{year-1:04d}-{month:02d}"), ("revenue_mom_pct", previous)):
+                bases = by_period.get(base_period, [])
+                # Ambiguous revisions must be resolved by the PIT version layer,
+                # not by arbitrary payload order during parsing.
+                if len(bases) == 1 and bases[0]["revenue"] != 0:
+                    item[field] = (item["revenue"] / bases[0]["revenue"] - 1) * 100
+        return sorted(parsed, key=lambda item: item["period"])
 
     def fetch_financial_statement_summary(self, stock_id: str, start_date: str | date, end_date: str | date) -> list[dict]:
         datasets = [
@@ -505,17 +529,17 @@ class FinMindClient:
                     fallback_date=row_date,
                     month_only=False,
                 )
-                announce_date = self._to_date(self._pick(row, "announce_date", "publication_date", "date")) or self._default_announce_date(
-                    period,
-                    fallback=row_date,
-                )
-                if not period or announce_date is None:
+                announce_date = self._to_date(self._pick(row, "announce_date", "publication_date", "public_at", "published_at"))
+                public_at = self._explicit_public_at(row)
+                if not period:
                     continue
                 bucket = by_period.setdefault(
                     period,
                     {
                         "period": period,
                         "announce_date": announce_date,
+                        "public_at": public_at,
+                        "publication_complete": public_at is not None,
                         "eps": None,
                         "roe_pct": None,
                         "gross_margin_pct": None,
@@ -526,8 +550,14 @@ class FinMindClient:
                         "raw": [],
                     },
                 )
-                bucket["announce_date"] = max(bucket["announce_date"], announce_date)
-                bucket["raw"].append(row)
+                if bucket["announce_date"] is None or announce_date is None:
+                    bucket["announce_date"] = None
+                else:
+                    bucket["announce_date"] = max(bucket["announce_date"], announce_date)
+                bucket["publication_complete"] = bucket["publication_complete"] and public_at is not None
+                if public_at is not None and bucket["public_at"] is not None:
+                    bucket["public_at"] = max(bucket["public_at"], public_at, key=lambda value: datetime.fromisoformat(value))
+                bucket["raw"].append({"dataset": dataset, **row})
                 self._merge_financial_metric(bucket, row)
 
         rows: list[dict] = []
@@ -537,6 +567,8 @@ class FinMindClient:
                 {
                     "period": item["period"],
                     "announce_date": item["announce_date"],
+                    "public_at": item["public_at"] if item["publication_complete"] else None,
+                    "parser_version": "financial-summary-v2",
                     "eps": item["eps"],
                     "roe_pct": item["roe_pct"],
                     "gross_margin_pct": item["gross_margin_pct"],

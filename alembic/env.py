@@ -7,6 +7,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.config import load_config
 from app.db.models import Base
+from app.db.session import install_sqlite_protection
 
 
 config = context.config
@@ -43,6 +44,7 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
 
+    install_sqlite_protection(connectable)
     with connectable.connect() as connection:
         context.configure(
             connection=connection,

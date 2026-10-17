@@ -34,8 +34,11 @@ SUBSCRIPTION_SHORTLIST_REVISION_PATH = (
 )
 
 
+SWING_RESEARCH_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / "20261016_0015_swing_research.py"
+
+
 def _revision_assignments() -> dict[str, object]:
-    tree = ast.parse(SUBSCRIPTION_SHORTLIST_REVISION_PATH.read_text(encoding="utf-8"))
+    tree = ast.parse(SWING_RESEARCH_REVISION_PATH.read_text(encoding="utf-8"))
     values: dict[str, object] = {}
     for node in tree.body:
         if not isinstance(node, ast.Assign):
@@ -54,7 +57,7 @@ def test_alembic_scaffold_points_to_current_schema_head():
     values = _revision_assignments()
 
     assert values["revision"] == ALEMBIC_HEAD_REVISION
-    assert values["down_revision"] == "20260629_0013"
+    assert values["down_revision"] == "20260729_0014"
 
 
 def test_initial_revision_uses_application_metadata():

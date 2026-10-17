@@ -77,28 +77,19 @@ def test_fetch_broker_agg_by_date_groups_rows_by_symbol(monkeypatch):
 def test_fetch_monthly_revenue_normalizes_growth_fields(monkeypatch):
     client = FinMindClient(api_key="dummy")
     rows = [
-        {
-            "date": "2024-02-10",
-            "revenue_month": "2024-01",
-            "revenue": "100000",
-            "revenue_year": "12.5",
-            "mom_growth_pct": "-3.2",
-        }
+        {"date": "2024-02-01", "revenue_year": 2024, "revenue_month": 1, "revenue": "100000", "publication_date": "2024-02-10"},
+        {"date": "2023-02-01", "revenue_year": 2023, "revenue_month": 1, "revenue": "80000"},
+        {"date": "2024-01-01", "revenue_year": 2023, "revenue_month": 12, "revenue": "125000"},
     ]
-    monkeypatch.setattr(client, "_request_dataset", lambda dataset, **kwargs: rows)  # noqa: ARG005
-
-    result = client.fetch_monthly_revenue("2330", "2024-01-01", "2024-02-29")
-
-    assert result == [
-        {
-            "period": "2024-01",
-            "announce_date": date(2024, 2, 10),
-            "revenue": 100000.0,
-            "revenue_yoy_pct": 12.5,
-            "revenue_mom_pct": -3.2,
-            "source": "finmind",
-        }
-    ]
+    monkeypatch.setattr(client, "_request_dataset", lambda dataset, **kwargs: rows)
+    result = client.fetch_monthly_revenue("2330", "2023-01-01", "2024-02-29")
+    current = next(row for row in result if row["period"] == "2024-01")
+    assert current["announce_date"] == date(2024, 2, 10)
+    assert current["public_at"] is None  # 只有日期，不能猜公告發生在當日零時。
+    assert current["revenue_yoy_pct"] == 25.0
+    assert abs(current["revenue_mom_pct"] + 20.0) < 1e-9
+    assert current["source"] == "finmind"
+    assert current["raw_json"]
 
 
 def test_fetch_financial_statement_summary_merges_statement_rows(monkeypatch):
@@ -107,14 +98,14 @@ def test_fetch_financial_statement_summary_merges_statement_rows(monkeypatch):
     def _dataset(dataset, **kwargs):  # noqa: ANN001, ARG001
         if dataset == "TaiwanStockFinancialStatements":
             return [
-                {"date": "2024-05-15", "type": "EPS", "value": "2.3"},
-                {"date": "2024-05-15", "type": "毛利率", "value": "45.0"},
-                {"date": "2024-05-15", "type": "營益率", "value": "30.0"},
+                {"date": "2024-03-31", "public_at": "2024-05-15T10:00:00+08:00", "type": "EPS", "value": "2.3"},
+                {"date": "2024-03-31", "public_at": "2024-05-15T10:00:00+08:00", "type": "毛利率", "value": "45.0"},
+                {"date": "2024-03-31", "public_at": "2024-05-15T10:00:00+08:00", "type": "營益率", "value": "30.0"},
             ]
         if dataset == "TaiwanStockBalanceSheet":
-            return [{"date": "2024-05-15", "type": "負債比", "value": "35.0"}]
+            return [{"date": "2024-03-31", "public_at": "2024-05-15T10:00:00+08:00", "type": "負債比", "value": "35.0"}]
         if dataset == "TaiwanStockCashFlowsStatement":
-            return [{"date": "2024-05-15", "type": "營業活動現金流量", "value": "1000"}]
+            return [{"date": "2024-03-31", "public_at": "2024-05-15T10:00:00+08:00", "type": "營業活動現金流量", "value": "1000"}]
         return []
 
     monkeypatch.setattr(client, "_request_dataset", _dataset)
@@ -122,7 +113,8 @@ def test_fetch_financial_statement_summary_merges_statement_rows(monkeypatch):
     result = client.fetch_financial_statement_summary("2330", "2024-01-01", "2024-06-30")
 
     assert len(result) == 1
-    assert result[0]["period"] == "2024-Q2"
+    assert result[0]["period"] == "2024-Q1"
+    assert result[0]["public_at"] == "2024-05-15T10:00:00+08:00"
     assert result[0]["eps"] == 2.3
     assert result[0]["gross_margin_pct"] == 45.0
     assert result[0]["operating_margin_pct"] == 30.0

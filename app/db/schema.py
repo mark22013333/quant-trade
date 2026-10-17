@@ -6,8 +6,8 @@ from sqlalchemy.engine import Engine
 from app.db.models import Base
 
 
-SCHEMA_VERSION = "2026-07-29-subscription-shortlist"
-ALEMBIC_HEAD_REVISION = "20260729_0014"
+SCHEMA_VERSION = "2026-10-16-swing-research"
+ALEMBIC_HEAD_REVISION = "20261016_0015"
 
 
 def initialize_schema(engine: Engine) -> None:

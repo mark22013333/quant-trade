@@ -154,22 +154,28 @@ def _calc_atr_pct(frame, period: int = 14) -> float:
 
 
 def _fundamental_scores(repo, *, symbol: str, trade_date: date) -> dict:
-    revenue = repo.get_latest_monthly_revenue(symbol, on_or_before=trade_date) if hasattr(repo, "get_latest_monthly_revenue") else None
-    financial = (
-        repo.get_latest_financial_summary(symbol, on_or_before=trade_date)
-        if hasattr(repo, "get_latest_financial_summary")
-        else None
-    )
-    recent_news = repo.list_recent_news_events(symbol, on_or_before=trade_date, limit=5) if hasattr(repo, "list_recent_news_events") else []
+    availability = "legacy_test_adapter"
+    if hasattr(repo, "get_point_in_time_fundamentals"):
+        from datetime import datetime, time
+        from zoneinfo import ZoneInfo
+        # The radar is an after-close tool. A timestamped source published later
+        # that evening must not enter the regular close research snapshot.
+        cutoff = datetime.combine(trade_date, time(13, 30), tzinfo=ZoneInfo("Asia/Taipei"))
+        inputs = repo.get_point_in_time_fundamentals(symbol, cutoff)
+        revenue, financial, recent_news = inputs["revenue"], inputs["financial"], inputs["news"]
+        availability = inputs["status"]
+    else:
+        revenue = repo.get_latest_monthly_revenue(symbol, on_or_before=trade_date) if hasattr(repo, "get_latest_monthly_revenue") else None
+        financial = repo.get_latest_financial_summary(symbol, on_or_before=trade_date) if hasattr(repo, "get_latest_financial_summary") else None
+        recent_news = repo.list_recent_news_events(symbol, on_or_before=trade_date, limit=5) if hasattr(repo, "list_recent_news_events") else []
 
     if revenue is None:
         revenue_score = 0.5
         revenue_summary = {"available": False}
     else:
         revenue_score = clip01(
-            (_norm_growth(getattr(revenue, "revenue_yoy_pct", None)) * 0.55)
-            + (_norm_growth(getattr(revenue, "revenue_mom_pct", None), scale=25.0) * 0.25)
-            + (_norm_positive(getattr(revenue, "revenue", None), scale=max(float(getattr(revenue, "revenue", 0.0) or 0.0), 1.0)) * 0.20)
+            (_norm_growth(getattr(revenue, "revenue_yoy_pct", None)) * 0.70)
+            + (_norm_growth(getattr(revenue, "revenue_mom_pct", None), scale=25.0) * 0.30)
         )
         revenue_summary = {
             "available": True,
@@ -234,7 +240,7 @@ def _fundamental_scores(repo, *, symbol: str, trade_date: date) -> dict:
         "valuation_or_growth_score": valuation_or_growth_score,
         "news_risk_score": news_risk_score,
         "fundamental_data_quality": quality,
-        "fundamental_summary": {"revenue": revenue_summary, "financial": financial_summary},
+        "fundamental_summary": {"revenue": revenue_summary, "financial": financial_summary, "source_status": availability},
         "news_summary": {"count": len(news_items), "negative_count": negative_count, "positive_count": positive_count, "items": news_items},
     }
 

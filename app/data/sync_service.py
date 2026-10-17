@@ -573,7 +573,11 @@ class SyncService:
         for symbol in symbols:
             try:
                 rows = self.finmind.fetch_monthly_revenue(symbol, start_date, end_date)
-                total_rows += self.repo.upsert_monthly_revenues(symbol, rows)
+                if hasattr(self.repo, "record_fundamental_sources"):
+                    total_rows += self.repo.record_fundamental_sources(symbol, rows, kind="monthly_revenue")
+                    self.repo.upsert_monthly_revenues(symbol, [item for item in rows if item.get("announce_date") is not None])
+                else:
+                    total_rows += self.repo.upsert_monthly_revenues(symbol, [item for item in rows if item.get("announce_date") is not None])
             except Exception as exc:  # noqa: BLE001
                 failed.append(self._failure("monthly_revenue", exc, symbol=symbol))
         result = {
@@ -589,7 +593,11 @@ class SyncService:
         for symbol in symbols:
             try:
                 rows = self.finmind.fetch_financial_statement_summary(symbol, start_date, end_date)
-                total_rows += self.repo.upsert_financial_statement_summaries(symbol, rows)
+                if hasattr(self.repo, "record_fundamental_sources"):
+                    total_rows += self.repo.record_fundamental_sources(symbol, rows, kind="financial_summary")
+                    self.repo.upsert_financial_statement_summaries(symbol, [item for item in rows if item.get("announce_date") is not None])
+                else:
+                    total_rows += self.repo.upsert_financial_statement_summaries(symbol, [item for item in rows if item.get("announce_date") is not None])
             except Exception as exc:  # noqa: BLE001
                 failed.append(self._failure("financial_statement_summary", exc, symbol=symbol))
         result = {
