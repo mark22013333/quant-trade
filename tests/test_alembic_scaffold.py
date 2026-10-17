@@ -29,10 +29,13 @@ WATCH_POOL_RISK_QUALITY_REVISION_PATH = PROJECT_ROOT / "alembic" / "versions" / 
 DAILY_RADAR_RISK_QUALITY_REVISION_PATH = (
     PROJECT_ROOT / "alembic" / "versions" / "20260629_0013_daily_radar_risk_quality.py"
 )
+SUBSCRIPTION_SHORTLIST_REVISION_PATH = (
+    PROJECT_ROOT / "alembic" / "versions" / "20260729_0014_subscription_shortlist.py"
+)
 
 
 def _revision_assignments() -> dict[str, object]:
-    tree = ast.parse(DAILY_RADAR_RISK_QUALITY_REVISION_PATH.read_text(encoding="utf-8"))
+    tree = ast.parse(SUBSCRIPTION_SHORTLIST_REVISION_PATH.read_text(encoding="utf-8"))
     values: dict[str, object] = {}
     for node in tree.body:
         if not isinstance(node, ast.Assign):
@@ -51,7 +54,7 @@ def test_alembic_scaffold_points_to_current_schema_head():
     values = _revision_assignments()
 
     assert values["revision"] == ALEMBIC_HEAD_REVISION
-    assert values["down_revision"] == "20260628_0012"
+    assert values["down_revision"] == "20260629_0013"
 
 
 def test_initial_revision_uses_application_metadata():
@@ -167,6 +170,7 @@ def test_fresh_database_can_upgrade_to_head(monkeypatch, tmp_path):
     watch_pool_columns = {column["name"] for column in inspector.get_columns("watch_pool_entries")}
     assert {"risk_adjusted_score", "risk_quality_score", "risk_quality_label", "risk_quality_reason"} <= daily_radar_columns
     assert {"risk_adjusted_score", "risk_quality_score", "risk_quality_label", "risk_quality_reason"} <= watch_pool_columns
+    assert {"shortlist_runs", "shortlist_items", "research_evidence", "scheduled_job_runs"} <= set(inspector.get_table_names())
 
 
 def test_initialize_schema_backfills_market_fundamental_columns_for_legacy_sqlite():

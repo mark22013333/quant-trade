@@ -60,7 +60,7 @@ def test_control_panel_home_exposes_browser_token_storage(monkeypatch):
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "control-panel-token" in response.text
+    assert "重新分析全市場" in response.text
     assert "quant_trade_control_panel_token" in response.text
     assert "X-Control-Panel-Token" in response.text
 
@@ -80,7 +80,7 @@ def test_control_panel_home_exposes_daily_radar_screener(monkeypatch):
     monkeypatch.setenv("CONTROL_PANEL_TOKEN", "secret-token")
     monkeypatch.setenv("CONTROL_PANEL_BIND_HOST", "127.0.0.1")
     with TestClient(app) as client:
-        response = client.get("/")
+        response = client.get("/advanced")
 
     assert response.status_code == 200
     assert 'id="radar-filter-search"' in response.text
@@ -765,7 +765,7 @@ def test_control_panel_home_exposes_symbol_exclusion_manager(monkeypatch):
     monkeypatch.setenv("CONTROL_PANEL_TOKEN", "secret-token")
     monkeypatch.setenv("CONTROL_PANEL_BIND_HOST", "127.0.0.1")
     with TestClient(app) as client:
-        response = client.get("/")
+        response = client.get("/advanced")
 
     assert response.status_code == 200
     assert 'id="symbol-exclusion-symbol"' in response.text

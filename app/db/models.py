@@ -451,6 +451,96 @@ class DailyRadarSnapshot(Base):
     __table_args__ = (UniqueConstraint("run_id", "symbol", name="uq_daily_radar_run_symbol"),)
 
 
+class ShortlistRun(Base):
+    __tablename__ = "shortlist_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    run_date: Mapped[date] = mapped_column(Date, index=True)
+    source_radar_run_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    cutoff_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="quant_ready", index=True)
+    ai_status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    model_version: Mapped[str] = mapped_column(String(80), default="daily-radar-balanced-v1")
+    candidate_count: Mapped[int] = mapped_column(Integer, default=0)
+    selected_count: Mapped[int] = mapped_column(Integer, default=0)
+    degraded: Mapped[bool] = mapped_column(Boolean, default=False)
+    error_message: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ResearchEvidence(Base):
+    __tablename__ = "research_evidence"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    evidence_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    symbol: Mapped[str] = mapped_column(String(20), index=True)
+    research_scope: Mapped[str] = mapped_column(String(24), default="daily", index=True)
+    input_hash: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(24), default="accepted", index=True)
+    event_type: Mapped[str] = mapped_column(String(60), default="")
+    sentiment: Mapped[str] = mapped_column(String(16), default="neutral")
+    relevance: Mapped[float] = mapped_column(Float, default=0.0)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    impact_horizon: Mapped[str] = mapped_column(String(40), default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    risk_tags_json: Mapped[str] = mapped_column(Text, default="[]")
+    sources_json: Mapped[str] = mapped_column(Text, default="[]")
+    exclude_recommended: Mapped[bool] = mapped_column(Boolean, default=False)
+    validation_errors_json: Mapped[str] = mapped_column(Text, default="[]")
+    provider: Mapped[str] = mapped_column(String(40), default="codex_subscription")
+    model: Mapped[str] = mapped_column(String(80), default="")
+    prompt_version: Mapped[str] = mapped_column(String(40), default="shortlist-research-v1")
+    cutoff_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    __table_args__ = (
+        UniqueConstraint("run_id", "symbol", "research_scope", name="uq_research_evidence_run_symbol_scope"),
+    )
+
+
+class ShortlistItem(Base):
+    __tablename__ = "shortlist_items"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    symbol: Mapped[str] = mapped_column(String(20), index=True)
+    name: Mapped[str] = mapped_column(String(100), default="")
+    quant_rank: Mapped[int] = mapped_column(Integer, default=0)
+    final_rank: Mapped[int] = mapped_column(Integer, default=0)
+    quant_score: Mapped[float] = mapped_column(Float, default=0.0)
+    price: Mapped[float] = mapped_column(Float, default=0.0)
+    selected: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    ai_status: Mapped[str] = mapped_column(String(24), default="pending")
+    ai_summary: Mapped[str] = mapped_column(Text, default="")
+    ai_sentiment: Mapped[str] = mapped_column(String(16), default="neutral")
+    ai_as_of: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    evidence_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    reason_tags_json: Mapped[str] = mapped_column(Text, default="[]")
+    risk_tags_json: Mapped[str] = mapped_column(Text, default="[]")
+    blocker_tags_json: Mapped[str] = mapped_column(Text, default="[]")
+    excluded_by_ai_risk: Mapped[bool] = mapped_column(Boolean, default=False)
+    forward_return_5d: Mapped[float | None] = mapped_column(Float, nullable=True)
+    forward_return_20d: Mapped[float | None] = mapped_column(Float, nullable=True)
+    forward_return_40d: Mapped[float | None] = mapped_column(Float, nullable=True)
+    forward_return_60d: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("run_id", "symbol", name="uq_shortlist_item_run_symbol"),)
+
+
+class ScheduledJobRun(Base):
+    __tablename__ = "scheduled_job_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_name: Mapped[str] = mapped_column(String(80), index=True)
+    run_key: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="running", index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    duration_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=1)
+    rows_affected: Mapped[int] = mapped_column(Integer, default=0)
+    message: Mapped[str] = mapped_column(Text, default="")
+
+
 class WatchPoolEntry(Base):
     __tablename__ = "watch_pool_entries"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

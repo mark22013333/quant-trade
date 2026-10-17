@@ -312,6 +312,7 @@ def cmd_run_scheduler(_args) -> None:
             enable_signal_job=bool(_args.enable_signal_job),
             enable_daily_radar=bool(_args.enable_daily_radar),
             enable_trigger_monitor=bool(_args.enable_trigger_monitor),
+            enable_shortlist=bool(_args.enable_shortlist),
             radar_hour=int(_args.radar_hour),
             radar_minute=int(_args.radar_minute),
             radar_target_count=int(_args.radar_target_count),
@@ -2196,6 +2197,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--disable-signal-job", dest="enable_signal_job", action="store_false", default=True)
     p.add_argument("--enable-daily-radar", action="store_true", default=False, help="also schedule daily radar sync + ranking")
     p.add_argument("--enable-trigger-monitor", action="store_true", default=False, help="also schedule daily radar trigger monitor")
+    p.add_argument("--enable-shortlist", action="store_true", default=False, help="schedule full-market Top 10 shortlist and Codex subscription research")
     p.add_argument("--radar-hour", type=int, default=8, help="daily radar job hour (Asia/Taipei)")
     p.add_argument("--radar-minute", type=int, default=45, help="daily radar job minute")
     p.add_argument("--radar-target-count", type=int, default=15, help="daily radar target count")

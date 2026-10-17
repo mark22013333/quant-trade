@@ -35,6 +35,7 @@ from web.services.shioaji_workflow import OrderTestConfig
 
 CONTROL_PANEL_HTML = Path("web/control_panel.html")
 CONTROL_PANEL_CSS = Path("web/control_panel.css")
+SHORTLIST_HTML = Path("web/shortlist.html")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPORTS_DIR = PROJECT_ROOT / "reports"
 LOG_PATH = REPORTS_DIR / "control_panel.log"
@@ -202,6 +203,10 @@ class SwingReportRequest(BaseModel):
 
 class AIAssistantRequest(BaseModel):
     force: bool = False
+
+
+class ShortlistRefreshRequest(BaseModel):
+    force_ai: bool = True
 
 
 class AccountBalanceRequest(BaseModel):
@@ -1704,12 +1709,59 @@ def _start_action(action: str, target, req, busy_error: str, accepted_message: s
 
 @app.get("/")
 def index() -> HTMLResponse:
+    return HTMLResponse(
+        SHORTLIST_HTML.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/advanced")
+def advanced() -> HTMLResponse:
     html = CONTROL_PANEL_HTML.read_text(encoding="utf-8")
     css = CONTROL_PANEL_CSS.read_text(encoding="utf-8")
     return HTMLResponse(
         html.replace("{{INLINE_CSS}}", css),
         headers={"Cache-Control": "no-store"},
     )
+
+
+def _run_shortlist_refresh(req: ShortlistRefreshRequest) -> None:
+    action = "shortlist-refresh"
+    from app.scheduler.jobs import (
+        run_shortlist_ai_job,
+        run_shortlist_finalize_job,
+        run_shortlist_quant_job,
+    )
+
+    try:
+        _update(action, progress=8, message="同步全市場並計算量化候選…", append_log="shortlist quant start")
+        quant = run_shortlist_quant_job(force=True)
+        _update(action, progress=56, message="量化候選完成，開始 Codex 訂閱分析…", append_log=str(quant))
+        ai_error = ""
+        if req.force_ai:
+            try:
+                ai = run_shortlist_ai_job(force=True)
+                _update(action, progress=84, message="AI 研究完成，正在固化 Top 10…", append_log=str(ai))
+            except Exception as exc:  # noqa: BLE001
+                ai_error = _safe_error_text(exc)
+                _update(
+                    action,
+                    progress=84,
+                    message="AI 暫時無法使用，改採純量化 Top 10…",
+                    append_log=ai_error,
+                )
+        final = run_shortlist_finalize_job(force=True)
+        suffix = f"；AI 降級：{ai_error}" if ai_error else ""
+        _update(
+            action,
+            state="done",
+            progress=100,
+            message=f"短期投資 Top 10 已更新{suffix}",
+            result=final,
+            append_log="shortlist completed",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _update(action, state="error", progress=0, message=_safe_error_text(exc), append_log=_safe_error_text(exc))
 
 
 @app.get("/control_panel.css")
@@ -2451,6 +2503,95 @@ def latest_candidates(count: int = 10) -> JSONResponse:
         return JSONResponse({"status": "ok", "data": data})
     except Exception as exc:  # noqa: BLE001
         _append_log_line("latest-candidates", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.get("/api/shortlist/latest")
+def latest_shortlist(limit: int = 10) -> JSONResponse:
+    try:
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+        from app.pipeline.shortlist import ShortlistService
+
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            data = ShortlistService(TradingRepository(session)).get_latest(limit=max(1, min(10, int(limit or 10))))
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("latest-shortlist", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.get("/api/shortlist/status")
+def shortlist_status() -> JSONResponse:
+    try:
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+        from app.pipeline.shortlist import ShortlistService
+
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            data = ShortlistService(TradingRepository(session)).status()
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("shortlist-status", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.get("/api/shortlist/evidence")
+def shortlist_evidence(status: str = "rejected", limit: int = 50) -> JSONResponse:
+    try:
+        import json
+        from sqlalchemy import select
+        from app.db.models import ResearchEvidence
+        from app.db.session import get_session_factory, init_db
+
+        init_db()
+        item_limit = max(1, min(100, int(limit or 50)))
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            stmt = select(ResearchEvidence)
+            if status:
+                stmt = stmt.where(ResearchEvidence.status == str(status))
+            stmt = stmt.order_by(ResearchEvidence.created_at.desc()).limit(item_limit)
+            rows = list(session.execute(stmt).scalars().all())
+            data = [
+                {
+                    "evidence_id": row.evidence_id,
+                    "run_id": row.run_id,
+                    "symbol": row.symbol,
+                    "status": row.status,
+                    "event_type": row.event_type,
+                    "summary": row.summary,
+                    "validation_errors": json.loads(row.validation_errors_json or "[]"),
+                    "created_at": row.created_at.isoformat(),
+                }
+                for row in rows
+            ]
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("shortlist-evidence", _safe_error_text(exc))
+        return _safe_error_response()
+
+
+@app.get("/api/shortlist/{run_id}")
+def shortlist_by_run(run_id: str, limit: int = 30) -> JSONResponse:
+    try:
+        from app.db.repository import TradingRepository
+        from app.db.session import get_session_factory, init_db
+        from app.pipeline.shortlist import ShortlistService
+
+        init_db()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            data = ShortlistService(TradingRepository(session)).get_run(
+                str(run_id), limit=max(1, min(30, int(limit or 30)))
+            )
+        return JSONResponse({"status": "ok", "data": data})
+    except Exception as exc:  # noqa: BLE001
+        _append_log_line("shortlist-by-run", _safe_error_text(exc))
         return _safe_error_response()
 
 
@@ -3664,6 +3805,17 @@ def status(action: str) -> JSONResponse:
 @app.post("/api/run/short-term")
 def run_short_term(req: ShortTermRequest) -> JSONResponse:
     return _start_action("short-term", _run_short_term, req, "短期 Dashboard 正在執行中", "短期 Dashboard 開始執行")
+
+
+@app.post("/api/shortlist/refresh")
+def refresh_shortlist(req: ShortlistRefreshRequest) -> JSONResponse:
+    return _start_action(
+        "shortlist-refresh",
+        _run_shortlist_refresh,
+        req,
+        "全市場短期投資分析正在執行中",
+        "已開始同步市場、量化排序與 AI 研究",
+    )
 
 
 @app.post("/api/run/swing-report")

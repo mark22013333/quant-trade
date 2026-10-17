@@ -505,6 +505,148 @@ def run_daily_radar_job(
     }
 
 
+def _run_shortlist_stage(job_name: str, callback, *, force: bool = False) -> dict[str, Any]:
+    from app.db.models import ScheduledJobRun
+    from app.db.session import get_session_factory, init_db
+    from sqlalchemy import select
+
+    init_db()
+    session_factory = get_session_factory()
+    today = datetime.now().date().isoformat()
+    run_key = f"{job_name}:{today}"
+    if force:
+        run_key = f"{run_key}:{datetime.now().strftime('%H%M%S%f')}"
+
+    with session_factory() as session:
+        existing = session.execute(
+            select(ScheduledJobRun).where(ScheduledJobRun.run_key == run_key).limit(1)
+        ).scalar_one_or_none()
+        if existing is not None and existing.status == "ok":
+            return {"status": "skipped", "reason": "already_completed", "run_key": run_key}
+        if existing is None:
+            existing = ScheduledJobRun(job_name=job_name, run_key=run_key, status="running")
+            session.add(existing)
+        else:
+            existing.status = "running"
+            existing.attempt_count = int(existing.attempt_count or 0) + 1
+            existing.started_at = datetime.utcnow()
+            existing.finished_at = None
+        session.commit()
+
+    started = datetime.utcnow()
+    try:
+        payload = callback()
+        status = "ok"
+        message = ""
+        rows = int(payload.get("items") or payload.get("selected_count") or payload.get("updated") or 0)
+    except Exception as exc:
+        payload = {"status": "error", "error": str(exc)}
+        status = "error"
+        message = str(exc)[:1200]
+        rows = 0
+
+    finished = datetime.utcnow()
+    with session_factory() as session:
+        record = session.execute(
+            select(ScheduledJobRun).where(ScheduledJobRun.run_key == run_key).limit(1)
+        ).scalar_one()
+        record.status = status
+        record.finished_at = finished
+        record.duration_seconds = max(0.0, (finished - started).total_seconds())
+        record.rows_affected = rows
+        record.message = message
+        session.commit()
+    if status == "error":
+        raise RuntimeError(message)
+    return {"status": "ok", "run_key": run_key, "data": payload}
+
+
+def run_shortlist_quant_job(*, force: bool = False) -> dict[str, Any]:
+    def callback() -> dict[str, Any]:
+        from app.db.session import get_session_factory
+        from app.pipeline.shortlist import ShortlistService
+
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            radar = run_daily_radar_job(
+                repo,
+                trade_date_mode="T",
+                target_count=30,
+                risk_profile="balanced",
+                universe="twse_tpex",
+                data_freshness_required=True,
+                include_attention=True,
+                include_extended_data=True,
+                prefer_official_bulk=True,
+            )
+            result = ShortlistService(repo).prepare(radar_run_id=str(radar.get("run_id") or ""))
+            session.commit()
+            return result
+
+    return _run_shortlist_stage("shortlist_quant", callback, force=force)
+
+
+def run_shortlist_ai_job(*, force: bool = False) -> dict[str, Any]:
+    def callback() -> dict[str, Any]:
+        from app.db.session import get_session_factory
+        from app.pipeline.shortlist import ShortlistService
+
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            result = ShortlistService(repo).enrich(force=force)
+            session.commit()
+            return result
+
+    return _run_shortlist_stage("shortlist_ai", callback, force=force)
+
+
+def run_shortlist_finalize_job(*, force: bool = False) -> dict[str, Any]:
+    def callback() -> dict[str, Any]:
+        from app.db.session import get_session_factory
+        from app.pipeline.shortlist import ShortlistService
+
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            result = ShortlistService(repo).finalize()
+            session.commit()
+            return result
+
+    return _run_shortlist_stage("shortlist_finalize", callback, force=force)
+
+
+def run_shortlist_premarket_job(*, force: bool = False) -> dict[str, Any]:
+    def callback() -> dict[str, Any]:
+        from app.db.session import get_session_factory
+        from app.pipeline.shortlist import ShortlistService
+
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            result = ShortlistService(repo).refresh_premarket()
+            session.commit()
+            return result
+
+    return _run_shortlist_stage("shortlist_premarket", callback, force=force)
+
+
+def run_shortlist_outcome_job(*, force: bool = False) -> dict[str, Any]:
+    def callback() -> dict[str, Any]:
+        from app.db.session import get_session_factory
+        from app.pipeline.shortlist import ShortlistService
+
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            repo = TradingRepository(session)
+            result = ShortlistService(repo).update_outcomes()
+            session.commit()
+            return result
+
+    return _run_shortlist_stage("shortlist_outcomes", callback, force=force)
+
+
 def _compact_daily_radar_items(items: list[dict] | tuple[dict, ...], *, limit: int = 5) -> list[dict]:
     rows = [item for item in items if isinstance(item, dict)]
     priority = {"ENTRY_READY": 3, "WATCH_WAIT_TRIGGER": 2, "NOT_RECOMMENDED": 1}
@@ -693,6 +835,7 @@ def start_scheduler(
     enable_signal_job: bool = True,
     enable_daily_radar: bool = False,
     enable_trigger_monitor: bool = False,
+    enable_shortlist: bool = False,
     radar_hour: int = 8,
     radar_minute: int = 45,
     radar_target_count: int = 15,
@@ -723,7 +866,7 @@ def start_scheduler(
     trigger_monitor_force_notify: bool = False,
     scheduler_cls: Any | None = None,
 ) -> None:
-    if not enable_signal_job and not enable_daily_radar and not enable_trigger_monitor:
+    if not enable_signal_job and not enable_daily_radar and not enable_trigger_monitor and not enable_shortlist:
         raise ValueError("at least one scheduled job must be enabled")
     if scheduler_cls is None:
         try:
@@ -800,5 +943,57 @@ def start_scheduler(
             minute=int(trigger_monitor_minute),
             id="daily_radar_trigger_monitor",
             replace_existing=True,
+        )
+    if enable_shortlist:
+        common = {
+            "replace_existing": True,
+            "max_instances": 1,
+            "coalesce": True,
+            "misfire_grace_time": 3600,
+        }
+        scheduler.add_job(
+            run_shortlist_premarket_job,
+            trigger="cron",
+            day_of_week="mon-fri",
+            hour=7,
+            minute=30,
+            id="shortlist_premarket",
+            **common,
+        )
+        scheduler.add_job(
+            run_shortlist_quant_job,
+            trigger="cron",
+            day_of_week="mon-fri",
+            hour=14,
+            minute=10,
+            id="shortlist_quant",
+            **common,
+        )
+        scheduler.add_job(
+            run_shortlist_ai_job,
+            trigger="cron",
+            day_of_week="mon-fri",
+            hour=14,
+            minute=40,
+            id="shortlist_ai",
+            **common,
+        )
+        scheduler.add_job(
+            run_shortlist_finalize_job,
+            trigger="cron",
+            day_of_week="mon-fri",
+            hour=15,
+            minute=20,
+            id="shortlist_finalize",
+            **common,
+        )
+        scheduler.add_job(
+            run_shortlist_outcome_job,
+            trigger="cron",
+            day_of_week="sun",
+            hour=10,
+            minute=0,
+            id="shortlist_outcomes",
+            **common,
         )
     scheduler.start()

@@ -19,6 +19,171 @@
 
 ![重新計算雷達按鈕](docs/assets/daily-radar-recalculate-button.png)
 
+## 本機服務啟停 SOP
+
+以下是本機 Web 控制台的權威啟動方式。除非文件特別說明，專案內的指令都應在 repository 根目錄執行，並統一使用 `.venv` 與 `127.0.0.1:8766`。
+
+### 1) 啟動前檢查
+
+```bash
+cd /path/to/quant-trade
+test -x .venv/bin/python
+test -f .env
+.venv/bin/python -m app.cli init-db
+```
+
+Phase 1 與 paper 階段必須保持正式下單關閉：
+
+```bash
+if grep -Eq '^SHIOAJI_ENABLE_LIVE_ORDERS=1([[:space:]]|$)' .env; then
+  echo "拒絕啟動：SHIOAJI_ENABLE_LIVE_ORDERS 不應為 1"
+  exit 1
+fi
+```
+
+如果 `.venv` 或 `.env` 尚未建立，先依照[完整建置 SOP](#附錄完整建置-sop)完成環境與設定。
+
+### 2) 啟動 Web 控制台
+
+建議先以前景模式啟動，終端機會直接顯示 Uvicorn 啟動與 HTTP 存取日誌：
+
+```bash
+.venv/bin/python run_web.py --host 127.0.0.1 --port 8766
+```
+
+看到以下訊息代表應用程式已完成啟動：
+
+```text
+Application startup complete.
+Uvicorn running on http://127.0.0.1:8766
+```
+
+`--reload` 只適合本機開發，不要用於 VM 或正式常駐服務：
+
+```bash
+.venv/bin/python run_web.py --host 127.0.0.1 --port 8766 --reload
+```
+
+### 3) 驗證服務
+
+另開一個終端機執行：
+
+```bash
+curl --fail --silent --show-error http://127.0.0.1:8766/api/ping
+```
+
+預期 HTTP 200，並回傳類似：
+
+```json
+{"status":"ok","time":"YYYY-MM-DD HH:MM:SS","pid":12345}
+```
+
+接著開啟：
+
+- [本機控制台：指揮台](http://127.0.0.1:8766/#dashboard)
+- [本機控制台：AI 決策](http://127.0.0.1:8766/#pipeline)
+- [本機控制台：交易驗收](http://127.0.0.1:8766/#shioaji)
+
+若 API 回傳 401，到控制台「設定」輸入與 `.env` 相同的 `CONTROL_PANEL_TOKEN`，不要把 token 貼到終端輸出、Git 或問題回報中。
+
+### 4) 查看程序狀態
+
+```bash
+lsof -nP -iTCP:8766 -sTCP:LISTEN
+```
+
+應看到 Python 程序監聽 `127.0.0.1:8766`。Web 操作紀錄可查看：
+
+```bash
+tail -f reports/control_panel.log
+```
+
+Uvicorn 啟動與 HTTP 存取日誌預設顯示在啟動服務的終端機。
+
+### 5) 停止與重新啟動
+
+前景模式直接在服務終端機按 `Ctrl+C`，等待 Uvicorn 顯示 shutdown complete。
+
+若原終端機已遺失，先確認 PID，再只停止監聽 8766 的程序：
+
+```bash
+lsof -nP -iTCP:8766 -sTCP:LISTEN
+kill "$(lsof -tiTCP:8766 -sTCP:LISTEN)"
+```
+
+確認埠號已釋放後，再依第 2 步重新啟動：
+
+```bash
+lsof -nP -iTCP:8766 -sTCP:LISTEN
+.venv/bin/python run_web.py --host 127.0.0.1 --port 8766
+```
+
+不要對不明 PID 使用 `kill -9`；一般停止失敗時，先查程序與日誌再處理。
+
+### 6) 常見啟動問題
+
+`Address already in use`：
+
+```bash
+lsof -nP -iTCP:8766 -sTCP:LISTEN
+```
+
+- 如果已是本專案服務，直接使用現有控制台，不要重複啟動。
+- 如果是殘留程序，依「停止與重新啟動」處理。
+- 不要為了省事改綁 `0.0.0.0`；非 localhost 綁定必須先設定存取保護。
+
+`找不到 uvicorn` 或套件：
+
+```bash
+.venv/bin/python -m pip install -r requirements.txt
+```
+
+資料庫 schema 或欄位缺漏：
+
+```bash
+.venv/bin/python -m app.cli init-db
+```
+
+控制台能開但沒有最新雷達：
+
+```bash
+.venv/bin/python -m app.cli run-daily-radar-job \
+  --universe curated_watchlist \
+  --risk-profile balanced \
+  --notify none
+```
+
+### 7) Web、排程與行情是不同服務
+
+| 服務 | 用途 | 是否會自動由 Web 啟動 |
+| --- | --- | --- |
+| Web 控制台 | 顯示頁面、API 與人工操作 | 不適用 |
+| 每日雷達排程 | 交易日固定同步並產生雷達 | 否 |
+| 盤中行情服務 | 訂閱 Shioaji Tick／五檔並寫入 heartbeat | 否 |
+
+只啟動 `run_web.py` 不代表每日排程或盤中行情已開始。需要常駐排程時：
+
+```bash
+.venv/bin/python -m app.cli run-scheduler \
+  --enable-daily-radar \
+  --radar-hour 8 \
+  --radar-minute 45 \
+  --radar-universe curated_watchlist \
+  --notify none
+```
+
+盤中行情只在需要正式行情驗證、且已設定 Shioaji 憑證時另外啟動；`--shioaji-live` 只代表正式行情，並不啟用正式下單：
+
+```bash
+.venv/bin/python -m app.cli run-intraday-quote-service \
+  --symbols 2330,2317,2454 \
+  --shioaji-live \
+  --heartbeat-interval-seconds 30 \
+  --fail-on-not-running
+```
+
+VM 不要使用 `nohup` 或 `--reload` 常駐，請依照 [VM 部署手冊](docs/vm_deployment.md)使用 systemd、Nginx 與 HTTPS。
+
 常用內部連結：
 
 - [本機控制台：指揮台](http://127.0.0.1:8766/#dashboard)
@@ -177,6 +342,8 @@ CODEX_ADVISOR_ENABLED=
 - [docs/decision_radar_phase1_test_journal.md](docs/decision_radar_phase1_test_journal.md)
 
 ### 7) 啟動 Web 控制台
+
+日常啟停、驗證、停止與排錯請以[本機服務啟停 SOP](#本機服務啟停-sop)為準。
 
 ```bash
 .venv/bin/python run_web.py --host 127.0.0.1 --port 8766
@@ -360,6 +527,55 @@ python main.py --mode dashboard
 ./run_dashboard.sh
 ```
 
+腳本會自動選擇專案內的 `venv`／`.venv`（不存在時建立 `.venv`）、確認套件、
+初始化資料庫、檢查 Codex CLI 與 ChatGPT 登入狀態、啟動排程器，並在
+`http://127.0.0.1:8766` 啟動 Web 服務。首頁只顯示最新短期投資 Top 10；
+完整操作與稽核紀錄位於 `http://127.0.0.1:8766/advanced`。
+
+首頁的「重新分析全市場」會依序執行全市場量化預選 30 檔、Codex AI 事件研究，
+再固化 Top 10。AI 分析透過已登入 ChatGPT 訂閱的本機 `codex exec` 執行，
+不需要 `OPENAI_API_KEY`。若 Codex 未登入、用量不足、網路中斷或逾時，
+系統會保留純量化 Top 10，不會阻擋 Web 服務啟動。
+按 `Ctrl+C` 即可停止服務。
+
+```bash
+# 指定連接埠
+./run_dashboard.sh --port 9000
+
+# 已確認套件且不想在每次啟動時執行 pip
+./run_dashboard.sh --skip-install
+
+# 只啟動控制台，不先重新產生報表
+./run_dashboard.sh --skip-generate
+
+# 臨時停用自動排程
+./run_dashboard.sh --no-scheduler
+```
+
+預設排程（台北時間）：
+
+- 週一至週五 07:30：只檢查既有 Top 10 的隔夜重大事件，不改寫原始排名快照。
+- 週一至週五 14:10：同步市場資料並從全市場量化預選 30 檔。
+- 週一至週五 14:40：每批 10 檔執行 Codex 訂閱制 AI 研究。
+- 週一至週五 15:20：固化當日 Top 10。
+- 週日 10:00：更新 5、20、40、60 個交易日成果。
+
+第一次使用 AI 研究前，請在同一位使用者的終端機完成登入：
+
+```bash
+codex login
+codex login status
+```
+
+Codex 只在唯讀沙箱中產生固定格式 JSON，不能修改專案、資料庫或執行交易。
+登入憑證不會寫入 `.env`、日誌或資料庫。
+
+若要綁定非 localhost 位址，必須先設定 `CONTROL_PANEL_TOKEN`：
+
+```bash
+CONTROL_PANEL_TOKEN='請換成足夠長的隨機值' ./run_dashboard.sh --host 0.0.0.0
+```
+
 ### 6) 產生 Shioaji AI 協作中心
 
 ```bash
@@ -374,19 +590,15 @@ python main.py --mode shioaji-ai
 若要以 Web 方式查看（FastAPI）：
 
 ```bash
-python run_web.py --reload
+.venv/bin/python run_web.py --host 127.0.0.1 --port 8766 --reload
 ```
 
 ### 7) Web 控制台（報表 + Shioaji 測試）
 
-```bash
-python run_web.py --reload
-```
-
-或使用一鍵腳本：
+這一節保留功能說明；服務啟停請以[本機服務啟停 SOP](#本機服務啟停-sop)為準。
 
 ```bash
-./run_web.sh
+.venv/bin/python run_web.py --host 127.0.0.1 --port 8766
 ```
 
 控制台可調整參數：
@@ -405,11 +617,11 @@ python run_web.py --reload
 若要以 Python 直接啟動（適合 IDE Run/Stop）：
 
 ```bash
-python run_web.py
-python run_web.py --reload
-python run_web.py --host 0.0.0.0 --port 8080
 .venv/bin/python run_web.py --host 127.0.0.1 --port 8766
+.venv/bin/python run_web.py --host 127.0.0.1 --port 8766 --reload
 ```
+
+`run_web.sh` 是使用 `venv` 與 8000 埠的舊版輔助腳本，不是目前的權威啟動方式；後續應另行統一或移除。
 
 若帳戶查詢無回應，請避免同時點多個帳戶查詢（帳務 API 需要序列化），可先看 `reports/control_panel.log` 追蹤進度。
 

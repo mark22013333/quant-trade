@@ -283,7 +283,7 @@ def generate_daily_radar(
     threshold_offset: float = 0.0,
 ) -> list[dict]:
     profile = normalize_risk_profile(risk_profile)
-    cap = max(10, min(20, int(target_count or 15)))
+    cap = max(10, min(30, int(target_count or 15)))
     offset = _clip(float(threshold_offset or 0.0), -10.0, 10.0)
     if profile == "aggressive":
         entry_score_min = 66.0

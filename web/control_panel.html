@@ -13,6 +13,23 @@
   </style>
 </head>
 <body>
+  <section id="shortlist-advanced-panel" style="margin:18px auto 0;max-width:1440px;padding:18px 22px;border:1px solid rgba(73,226,166,.24);background:#111b1a;color:#e8f0eb;border-radius:10px;font-family:'Noto Sans TC',sans-serif">
+    <div style="display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <div>
+        <div style="font-size:11px;letter-spacing:.15em;color:#49e2a6">SHORTLIST OPERATIONS</div>
+        <strong style="display:block;margin-top:5px">短期 Top 10 排程與 Codex 訂閱狀態</strong>
+        <span id="shortlist-advanced-status" style="display:block;margin-top:5px;color:#91a19a;font-size:12px">正在讀取狀態…</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a href="/" style="padding:9px 12px;color:#111b1a;background:#49e2a6;text-decoration:none;border-radius:5px;font-size:12px;font-weight:700">回到 Top 10</a>
+        <button id="shortlist-advanced-refresh" type="button" style="padding:9px 12px;color:#e8f0eb;background:transparent;border:1px solid #52635d;border-radius:5px;cursor:pointer">手動重跑 AI 與全市場分析</button>
+      </div>
+    </div>
+    <details style="margin-top:12px">
+      <summary style="cursor:pointer;color:#aebdb7;font-size:12px">查看最近排程與 AI 拒收紀錄</summary>
+      <pre id="shortlist-advanced-log" style="white-space:pre-wrap;max-height:260px;overflow:auto;color:#aebdb7;font:11px/1.6 'JetBrains Mono',monospace">尚無資料</pre>
+    </details>
+  </section>
   <div class="page">
     <header class="hero">
       <div class="hero-kicker">Quant-Trade Command Center</div>
@@ -1992,6 +2009,49 @@
   </div>
 
   <script>
+    (async function initShortlistAdvancedPanel() {
+      const statusEl = document.getElementById('shortlist-advanced-status');
+      const logEl = document.getElementById('shortlist-advanced-log');
+      const button = document.getElementById('shortlist-advanced-refresh');
+      const stored = window.localStorage.getItem('quant_trade_control_panel_token') || '';
+      const authHeaders = stored ? {'X-Control-Panel-Token': stored} : {};
+      async function readJson(url, options = {}) {
+        const response = await fetch(url, {...options, headers: {...authHeaders, ...(options.headers || {})}});
+        const payload = await response.json();
+        if (!response.ok || payload.status === 'error') throw new Error(payload.error || '讀取失敗');
+        return payload.data ?? payload;
+      }
+      async function loadShortlistOps() {
+        try {
+          const [status, rejected] = await Promise.all([
+            readJson('/api/shortlist/status'),
+            readJson('/api/shortlist/evidence?status=rejected&limit=20')
+          ]);
+          const codex = status.codex || {};
+          statusEl.textContent = `${codex.detail || 'Codex 狀態未知'}｜最新清單：${status.latest_run?.status || '尚無'}`;
+          logEl.textContent = JSON.stringify({jobs: status.jobs || [], rejected_evidence: rejected || []}, null, 2);
+        } catch (error) {
+          statusEl.textContent = `狀態讀取失敗：${error.message}`;
+        }
+      }
+      button?.addEventListener('click', async () => {
+        button.disabled = true;
+        statusEl.textContent = '已排程全市場分析；完成後會自動更新首頁。';
+        try {
+          await readJson('/api/shortlist/refresh', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({force_ai: true})
+          });
+        } catch (error) {
+          statusEl.textContent = `啟動失敗：${error.message}`;
+        } finally {
+          button.disabled = false;
+        }
+      });
+      loadShortlistOps();
+    })();
+
     const logEl = document.getElementById('log');
     const serverLogEl = document.getElementById('server-log');
     const reportList = document.getElementById('report-list');

@@ -40,7 +40,7 @@ class DailyRadarRequest:
         return normalize_trade_date(self.trade_date)
 
     def normalized_target_count(self) -> int:
-        return max(10, min(20, int(self.target_count or 15)))
+        return max(10, min(30, int(self.target_count or 15)))
 
     def normalized_risk_profile(self) -> str:
         return normalize_risk_profile(self.risk_profile)

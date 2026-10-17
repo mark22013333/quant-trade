@@ -213,3 +213,6 @@ data/stock_data
 /output/playwright/
 data/cache
 docs/shioaji/llms-full.txt
+
+# Local spec files (managed by plan-* / bug-* skills)
+.spec/
